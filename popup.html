@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>TUBE FOCUS</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header & Toggles -->
+    <header>
+      <div class="header-left">TUBE FOCUS</div>
+      <div class="toggles">
+        <button id="toggleOn" class="active">On</button>
+        <button id="toggleOff">Off</button>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button data-tab="setup"  class="active">Setup</button>
+      <button data-tab="current">Current</button>
+      <button data-tab="summary">Summary</button>
+    </nav>
+
+    <!-- Setup -->
+    <section id="setup" class="active">
+      <label for="goalInput">  Define your goal in detail:</label>
+      <input type="text" id="goalInput" placeholder="e.g. Learn React component lifecycle">
+      <button id="startSession" class="action">Start Session</button>
+      <button id="stopSession"  class="action" disabled>Stop Session</button>
+    </section>
+
+    <!-- Current -->
+    <section id="current">
+      <strong>Current Video Score:</strong>
+      <div id="scoreDisplay">–</div>
+    </section>
+
+    <!-- Summary -->
+    <section id="summary">
+      <h2>Session Summary</h2>
+      <div id="summaryMessage"></div>
+      <canvas id="scoreChart" width="240" height="120"></canvas>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <a href="https://www.linkedin.com/in/naveenus" target="_blank">Meet the Creator</a>
+    </footer>
+  </div>
+
+  <!-- Chart.js library -->
+  <script src="libs/chart.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

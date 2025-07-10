@@ -1,0 +1,178 @@
+:root {
+  --bg: #181e22;
+  --panel: #32454e;
+  --text: #ddd;
+  --accent: #cc785c;
+  --highlight: #4b6c79;
+  --font: "Roboto Mono", monospace;
+}
+
+body {
+  margin: 0;
+  padding: 0.5rem;
+  width: 280px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+}
+
+.popup-container {
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Header */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--panel);
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #222;
+}
+.header-left {
+  font-weight: bold;
+  color: var(--accent);
+  font-size: 1.2rem;
+  letter-spacing: 1px;
+}
+
+/* Toggles */
+.toggles button {
+  background: var(--panel);
+  border: none;
+  color: var(--text);
+  padding: 0.2rem 0.5rem;
+  margin-left: 0.2rem;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 0.9rem;
+}
+.toggles button.active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  margin-top: 0.5rem;
+}
+.tabs button {
+  flex: 1;
+  padding: 0.4rem;
+  border: none;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.tabs button.active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* Sections */
+section {
+  display: none;
+  padding: 0.5rem;
+  background: var(--panel);
+  border-radius: 4px;
+  margin-top: 0.5rem;
+}
+section.active {
+  display: block;
+}
+
+/* --- FIX: Consistent spacing in setup section --- */
+#setup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem; /* Consistent gap between all elements */
+}
+#setup label {
+  margin-bottom: -0.5rem; /* Reduce the default larger gap after the label */
+}
+#setup input, #setup button {
+  margin: 0; /* Remove individual margins to rely on the gap */
+}
+/* --- END OF FIX --- */
+
+
+input[type="text"] {
+  width: 100%;
+  padding: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--highlight);
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+input[type="text"]:focus {
+  outline: 2px solid var(--accent);
+  border-color: var(--accent);
+}
+
+/* Action Buttons */
+button.action {
+  width: 100%;
+  padding: 0.5rem;
+  background: var(--highlight);
+  color: var(--bg);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+button:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
+
+/* Current section */
+#current {
+  font-family: var(--font);
+  text-align: center;
+}
+#scoreDisplay {
+  font-size: 2.5rem;
+  color: var(--accent);
+  background: #2b3a42;
+  padding: 0.6rem;
+  border-radius: 4px;
+  margin-top: 0.4rem;
+}
+
+/* Summary section */
+#summary {
+  text-align: center;
+}
+#summary h2 {
+  margin-top: 0;
+}
+#summaryMessage {
+  margin-bottom: 0.6rem;
+}
+.feedback {
+    font-style: italic;
+    margin-top: 0.5rem;
+    color: var(--accent);
+}
+
+/* Footer */
+footer {
+  margin-top: 0.7rem;
+  text-align: center;
+  font-size: 11px;
+  background: var(--panel);
+  padding: 0.4rem;
+}
+footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+footer a:hover {
+  text-decoration: underline;
+}
