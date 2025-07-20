@@ -1,8 +1,31 @@
 // background.js
 console.log('[background] service worker started');
 
+let sessionTimer = null;
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'FETCH_SCORE') {
+  if (msg.type === 'START_SESSION') {
+    if (sessionTimer) {
+      clearTimeout(sessionTimer);
+    }
+    sessionTimer = setTimeout(() => {
+      chrome.storage.local.set({ sessionActive: false }, () => {
+        chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+          if (tabs[0]) {
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'SESSION_STOPPED' });
+          }
+        });
+        // Open the popup and switch to the summary tab
+        chrome.action.openPopup();
+        chrome.runtime.sendMessage({ type: 'SHOW_SUMMARY' });
+      });
+    }, msg.duration * 60 * 1000);
+  } else if (msg.type === 'STOP_SESSION') {
+    if (sessionTimer) {
+      clearTimeout(sessionTimer);
+      sessionTimer = null;
+    }
+  } else if (msg.type === 'FETCH_SCORE') {
     console.log('[background] FETCH_SCORE request', msg);
     fetch('https://yt-scorer-49646986060.us-central1.run.app/predict', {
       method: 'POST',

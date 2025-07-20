@@ -133,10 +133,16 @@ chrome.storage.local.get(['sessionActive','goal'], prefs => {
   });
 });
 
+const sessionDurationInput = document.getElementById('sessionDuration');
+
 // --- Start Session ---
 startBtn.addEventListener('click', () => {
   const goal = goalInput.value.trim();
-  if (!goal) return;
+  const duration = parseInt(sessionDurationInput.value, 10);
+  if (!goal || !duration || duration < 1) return;
+
+  chrome.runtime.sendMessage({ type: 'START_SESSION', duration });
+
   chrome.storage.local.set({
     sessionActive: true, goal,
     watchedScores: [], lastVideoId: null, currentScore: null
@@ -152,6 +158,7 @@ startBtn.addEventListener('click', () => {
 
 // --- Stop Session ---
 stopBtn.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'STOP_SESSION' });
   chrome.storage.local.set({ sessionActive: false }, () => {
     startBtn.disabled = false;
     stopBtn.disabled  = true;
@@ -171,6 +178,8 @@ chrome.runtime.onMessage.addListener(msg => {
       if (!videoId) return;
       chrome.storage.local.set({ currentScore: msg.score, lastVideoId: videoId });
     });
+  } else if (msg.type === 'SHOW_SUMMARY') {
+    document.querySelector('[data-tab="summary"]').click();
   }
 });
 
