@@ -101,7 +101,7 @@ section.active {
 /* --- END OF FIX --- */
 
 
-input[type="text"] {
+input[type="text"], input[type="number"] {
   width: 100%;
   padding: 0.5rem;
   background: var(--bg);
@@ -110,7 +110,7 @@ input[type="text"] {
   border-radius: 4px;
   box-sizing: border-box;
 }
-input[type="text"]:focus {
+input[type="text"]:focus, input[type="number"]:focus {
   outline: 2px solid var(--accent);
   border-color: var(--accent);
 }
