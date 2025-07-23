@@ -10,9 +10,10 @@
     <!-- Header & Toggles -->
     <header>
       <div class="header-left">TUBE FOCUS</div>
+      <div id="timerDisplay" style="font-size: 1.2rem; color: var(--accent);"></div>
       <div class="toggles">
         <button id="toggleOn" class="active">On</button>
-        <button id="toggleOff">Off</button>
+        <button id="toggleOff" class="active">Off</button>
       </div>
     </header>
 
@@ -27,14 +28,27 @@
     <section id="setup" class="active">
       <label for="goalInput">  Define your goal in detail:</label>
       <input type="text" id="goalInput" placeholder="e.g. Learn React component lifecycle">
+      <label for="sessionDuration">Session duration (minutes):</label>
+      <input type="number" id="sessionDuration" min="1" value="25">
+      
+      <label for="scoreMode">Scoring Mode:</label>
+      <select id="scoreMode">
+        <option value="title_and_description">Title + Description</option>
+        <option value="title_only">Title Only</option>
+      </select>
+      
       <button id="startSession" class="action">Start Session</button>
       <button id="stopSession"  class="action" disabled>Stop Session</button>
     </section>
 
     <!-- Current -->
     <section id="current">
-      <strong>Current Video Score:</strong>
+      <strong>Current Video Score (from session):</strong>
       <div id="scoreDisplay">–</div>
+
+      <hr style="margin: 1rem 0; border-color: var(--highlight);">
+
+      <!-- Remove the entire Calculate a One-Time Score section from the popup -->
     </section>
 
     <!-- Summary -->
