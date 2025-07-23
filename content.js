@@ -54,24 +54,46 @@ function applyColor(score) {
   });
 }
 
-// Show error overlay
+// Show error overlay (now flashes red and shows a toast message at the bottom)
 function showErrorOverlay(msg) {
-  let overlay = document.getElementById('tubefocus-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'tubefocus-overlay';
-    overlay.style.position = 'fixed';
-    overlay.style.top = 0;
-    overlay.style.left = 0;
-    overlay.style.width = '100vw';
-    overlay.style.height = '100vh';
-    overlay.style.zIndex = 999999;
-    overlay.style.pointerEvents = 'none';
-    document.body.appendChild(overlay);
+  // Flash the screen red
+  let flash = document.createElement('div');
+  flash.style.position = 'fixed';
+  flash.style.top = 0;
+  flash.style.left = 0;
+  flash.style.width = '100vw';
+  flash.style.height = '100vh';
+  flash.style.zIndex = 999999;
+  flash.style.background = 'rgba(200,0,0,0.7)';
+  flash.style.pointerEvents = 'none';
+  flash.style.transition = 'opacity 0.5s';
+  document.body.appendChild(flash);
+  setTimeout(() => {
+    flash.style.opacity = '0';
+    setTimeout(() => flash.remove(), 500);
+  }, 500);
+
+  // Show a toast message at the bottom
+  let toast = document.getElementById('tubefocus-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'tubefocus-toast';
+    toast.style.position = 'fixed';
+    toast.style.left = '50%';
+    toast.style.bottom = '32px';
+    toast.style.transform = 'translateX(-50%)';
+    toast.style.background = 'rgba(40,40,40,0.95)';
+    toast.style.color = '#fff';
+    toast.style.padding = '12px 28px';
+    toast.style.borderRadius = '8px';
+    toast.style.fontSize = '1.1em';
+    toast.style.fontWeight = 'bold';
+    toast.style.zIndex = 1000000;
+    toast.style.boxShadow = '0 2px 12px #0008';
+    document.body.appendChild(toast);
   }
-  overlay.style.background = 'rgba(200,0,0,0.7)';
-  overlay.style.opacity = '0.7';
-  overlay.innerHTML = `<div style="position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:2em;text-align:center;font-weight:bold;text-shadow:0 2px 8px #000;">${msg}</div>`;
+  toast.textContent = msg || "Can't connect to the scoring backend.";
+  toast.style.display = 'block';
 }
 
 // ask background.js to score
@@ -169,10 +191,12 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// Utility to remove overlay (can be called from anywhere)
+// Utility to remove overlay and toast (can be called from anywhere)
 function removeOverlay() {
   const overlay = document.getElementById('tubefocus-overlay');
   if (overlay) overlay.remove();
+  const toast = document.getElementById('tubefocus-toast');
+  if (toast) toast.remove();
 }
 
 async function reScoreWithNewMode(newMode) {
