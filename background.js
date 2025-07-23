@@ -1,9 +1,6 @@
 // background.js
 console.log('[background] service worker started');
 
-// background.js
-console.log('[background] service worker started');
-
 const API_ENDPOINT = 'https://yt-scorer-49646986060.us-central1.run.app/predict';
 
 // --- Alarms for session management ---
@@ -55,4 +52,3 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // Keep the message channel open for sendResponse
   }
 });
-
