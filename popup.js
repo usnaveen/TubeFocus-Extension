@@ -7,13 +7,14 @@ const stopBtn        = document.getElementById('stopSession');
 const scoreDisplay   = document.getElementById('scoreDisplay');
 const summaryMessage = document.getElementById('summaryMessage');
 const chartCanvas    = document.getElementById('scoreChart').getContext('2d');
+const scoreModeEl    = document.getElementById('scoreMode');
 
 const toggleOnBtn    = document.getElementById('toggleOn');
 const toggleOffBtn   = document.getElementById('toggleOff');
 const tabs           = document.querySelectorAll('.tabs button');
 const sections       = document.querySelectorAll('section');
 
-// --- FIX: Populated Positive / negative feedback arrays ---
+// --- Positive / negative feedback arrays ---
 const positiveMsgs = [
     "Incredible focus! You're on a roll.",
     "Amazing work! You're making real progress toward your goal.",
@@ -38,7 +39,7 @@ const negativeMsgs = [
     "A slight detour, but the destination is still the same. You can do it.",
     "Let's tighten up the focus for the next session. You've got this."
 ];
-// --- END OF FIX ---
+// --- END OF ARRAYS ---
 
 // --- Chart.js setup ---
 let scoreChart;
@@ -110,64 +111,92 @@ tabs.forEach(btn => {
   });
 });
 
-// --- Initialize UI & “Current” score on load ---
-chrome.storage.local.get(['sessionActive','goal'], prefs => {
-  const active = !!prefs.sessionActive;
-  startBtn.disabled = active;
-  stopBtn.disabled  = !active;
-  goalInput.value   = prefs.goal || '';
-  toggleOnBtn.classList.toggle('active', active);
-  toggleOffBtn.classList.toggle('active', !active);
+const timerDisplay = document.getElementById('timerDisplay');
+let timerInterval = null;
+
+// --- Centralized UI Update ---
+function updateUI(state) {
+  const { sessionActive, goal, scoreMode, sessionEndTime } = state;
+
+  startBtn.disabled = sessionActive;
+  stopBtn.disabled = !sessionActive;
+  goalInput.value = goal || '';
+  scoreModeEl.value = scoreMode || 'title_and_description';
+
+  toggleOnBtn.classList.toggle('active', sessionActive);
+  toggleOffBtn.classList.toggle('active', !sessionActive);
+
+  if (sessionActive && sessionEndTime) {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((sessionEndTime - Date.now()) / 1000));
+      const minutes = Math.floor(remaining / 60).toString().padStart(2, '0');
+      const seconds = (remaining % 60).toString().padStart(2, '0');
+      timerDisplay.textContent = `${minutes}:${seconds}`;
+      if (remaining <= 0) {
+        clearInterval(timerInterval);
+        timerDisplay.textContent = '';
+      }
+    }, 1000);
+  } else {
+    if (timerInterval) clearInterval(timerInterval);
+    timerDisplay.textContent = '';
+  }
 
   getCurrentVideoId(videoId => {
     if (!videoId) {
       scoreDisplay.textContent = '–';
       return;
     }
-    chrome.storage.local.get(['lastVideoId','currentScore'], s => {
+    chrome.storage.local.get(['lastVideoId', 'currentScore'], s => {
       scoreDisplay.textContent =
         s.lastVideoId === videoId && s.currentScore != null
           ? s.currentScore
           : '–';
     });
   });
+}
+
+// --- Initialize UI & Listen for Changes ---
+chrome.storage.local.get(['sessionActive', 'goal', 'scoreMode', 'sessionEndTime'], updateUI);
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local') {
+    chrome.storage.local.get(['sessionActive', 'goal', 'scoreMode', 'sessionEndTime'], updateUI);
+  }
 });
 
 const sessionDurationInput = document.getElementById('sessionDuration');
+
+// --- Event Listeners for Toggles ---
+toggleOffBtn.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'STOP_SESSION' });
+});
+
+toggleOnBtn.addEventListener('click', () => {
+  chrome.storage.local.get('sessionActive', prefs => {
+    if (!prefs.sessionActive) {
+      // This button doesn't start a session, it just indicates the 'On' state.
+      // The actual session is started via the "Start Session" button.
+      toggleOnBtn.classList.add('active');
+      toggleOffBtn.classList.remove('active');
+    }
+  });
+});
+
 
 // --- Start Session ---
 startBtn.addEventListener('click', () => {
   const goal = goalInput.value.trim();
   const duration = parseInt(sessionDurationInput.value, 10);
+  const scoreMode = scoreModeEl.value;
   if (!goal || !duration || duration < 1) return;
 
-  chrome.runtime.sendMessage({ type: 'START_SESSION', duration });
-
-  chrome.storage.local.set({
-    sessionActive: true, goal,
-    watchedScores: [], lastVideoId: null, currentScore: null
-  }, () => {
-    startBtn.disabled = true;
-    stopBtn.disabled  = false;
-    toggleOnBtn.classList.add('active');
-    toggleOffBtn.classList.remove('active');
-    scoreDisplay.textContent = '–';
-    sendToContent({ type: 'SESSION_STARTED', goal });
-  });
+  chrome.runtime.sendMessage({ type: 'START_SESSION', duration, goal, scoreMode });
 });
 
 // --- Stop Session ---
 stopBtn.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'STOP_SESSION' });
-  chrome.storage.local.set({ sessionActive: false }, () => {
-    startBtn.disabled = false;
-    stopBtn.disabled  = true;
-    toggleOffBtn.classList.add('active');
-    toggleOnBtn.classList.remove('active');
-    scoreDisplay.textContent = '–';
-    sendToContent({ type: 'SESSION_STOPPED' });
-    document.querySelector('[data-tab="summary"]').click();
-  });
 });
 
 // --- Live “Current” score updates from content.js ---
@@ -180,6 +209,9 @@ chrome.runtime.onMessage.addListener(msg => {
     });
   } else if (msg.type === 'SHOW_SUMMARY') {
     document.querySelector('[data-tab="summary"]').click();
+  } else if (msg.type === 'ERROR') {
+    scoreDisplay.textContent = msg.error || 'An error occurred.';
+    scoreDisplay.classList.add('error');
   }
 });
 
@@ -199,3 +231,26 @@ function renderSummary() {
     initChart(scores.map((_,i)=>i+1), scores);
   });
 }
+
+// --- Score Mode Change: Live update during session ---
+scoreModeEl.addEventListener('change', () => {
+  const newMode = scoreModeEl.value;
+  chrome.storage.local.get('sessionActive', prefs => {
+    if (prefs.sessionActive) {
+      chrome.storage.local.set({ scoreMode: newMode }, () => {
+        sendToContent({ type: 'SCORE_MODE_CHANGED', mode: newMode });
+        // Show a brief message to the user
+        scoreDisplay.textContent = 'Scoring mode changed. Score updating...';
+        scoreDisplay.classList.remove('error');
+        setTimeout(() => {
+          chrome.storage.local.get(['lastVideoId','currentScore'], s => {
+            scoreDisplay.textContent =
+              s.currentScore != null ? s.currentScore : '\u2013';
+          });
+        }, 2000);
+      });
+    } else {
+      chrome.storage.local.set({ scoreMode: newMode });
+    }
+  });
+});
