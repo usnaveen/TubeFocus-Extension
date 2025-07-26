@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TubeFocus Extension Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #0056b3;
+        }
+        .score-display {
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <h1>TubeFocus Extension Test Page</h1>
+    
+    <div class="test-section">
+        <h2>Score Display Test</h2>
+        <p>This simulates the score display functionality:</p>
+        <button class="test-button" onclick="testScoreDisplay()">Show Score Display</button>
+        <button class="test-button" onclick="testFeedbackModal()">Show Feedback Modal</button>
+        <button class="test-button" onclick="hideScoreDisplay()">Hide Score Display</button>
+    </div>
+
+    <div class="test-section">
+        <h2>API Test</h2>
+        <p>Test the feedback API:</p>
+        <button class="test-button" onclick="testFeedbackAPI()">Test Feedback API</button>
+        <div id="api-result"></div>
+    </div>
+
+    <script>
+        // Simulate the score display functionality
+        function testScoreDisplay() {
+            const score = Math.random();
+            const percentage = Math.round(score * 100);
+            const color = score <= 0.3 ? '#ff4444' : score <= 0.6 ? '#ffaa00' : '#44ff44';
+            
+            const display = document.createElement('div');
+            display.id = 'test-score-display';
+            display.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 20px;
+                background: rgba(0, 0, 0, 0.8);
+                color: ${color};
+                padding: 12px 16px;
+                border-radius: 8px;
+                font-family: 'Roboto', sans-serif;
+                font-size: 14px;
+                font-weight: bold;
+                z-index: 10000;
+                cursor: pointer;
+                border: 1px solid ${color};
+                min-width: 80px;
+                text-align: center;
+            `;
+            display.innerHTML = `
+                <div style="font-size: 18px; margin-bottom: 4px;">${percentage}%</div>
+                <div style="font-size: 11px; opacity: 0.8;">Click to rate</div>
+            `;
+            
+            display.addEventListener('click', testFeedbackModal);
+            document.body.appendChild(display);
+        }
+
+        function testFeedbackModal() {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(0, 0, 0, 0.5);
+                z-index: 9999;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+            
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: white;
+                color: #333;
+                padding: 24px;
+                border-radius: 12px;
+                text-align: center;
+                max-width: 400px;
+                width: 90%;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            `;
+            
+            modal.innerHTML = `
+                <h3 style="margin: 0 0 16px 0; color: #333;">Rate this video's relevance</h3>
+                <p style="margin: 0 0 20px 0; color: #666;">How relevant is this video to your goal?</p>
+                <div style="display: flex; gap: 8px; justify-content: center; margin-bottom: 20px;">
+                    <button class="feedback-btn" data-score="1" style="padding: 8px 12px; border: 1px solid #ddd; background: #f5f5f5; border-radius: 4px; cursor: pointer;">1</button>
+                    <button class="feedback-btn" data-score="2" style="padding: 8px 12px; border: 1px solid #ddd; background: #f5f5f5; border-radius: 4px; cursor: pointer;">2</button>
+                    <button class="feedback-btn" data-score="3" style="padding: 8px 12px; border: 1px solid #ddd; background: #f5f5f5; border-radius: 4px; cursor: pointer;">3</button>
+                    <button class="feedback-btn" data-score="4" style="padding: 8px 12px; border: 1px solid #ddd; background: #f5f5f5; border-radius: 4px; cursor: pointer;">4</button>
+                    <button class="feedback-btn" data-score="5" style="padding: 8px 12px; border: 1px solid #ddd; background: #f5f5f5; border-radius: 4px; cursor: pointer;">5</button>
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: center;">
+                    <button id="cancel-feedback" style="padding: 8px 16px; border: 1px solid #ddd; background: #f5f5f5; border-radius: 4px; cursor: pointer;">Cancel</button>
+                </div>
+            `;
+            
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+            
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay || e.target.id === 'cancel-feedback') {
+                    overlay.remove();
+                }
+            });
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target.classList.contains('feedback-btn')) {
+                    const score = parseInt(e.target.dataset.score);
+                    alert(`Feedback submitted: ${score}/5`);
+                    overlay.remove();
+                }
+            });
+        }
+
+        function hideScoreDisplay() {
+            const display = document.getElementById('test-score-display');
+            if (display) {
+                display.remove();
+            }
+        }
+
+        async function testFeedbackAPI() {
+            const resultDiv = document.getElementById('api-result');
+            resultDiv.innerHTML = 'Testing API...';
+            
+            try {
+                const response = await fetch('http://localhost:8080/health');
+                if (response.ok) {
+                    resultDiv.innerHTML = '<div style="color: green;">✅ API is running!</div>';
+                } else {
+                    resultDiv.innerHTML = '<div style="color: red;">❌ API error</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div style="color: red;">❌ API connection failed: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html> 

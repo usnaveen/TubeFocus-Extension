@@ -12,7 +12,8 @@
     "storage",
     "notifications",
     "tabs",
-    "alarms"
+    "alarms",
+    "scripting"
   ],
   "host_permissions": [
     "https://*.youtube.com/*",

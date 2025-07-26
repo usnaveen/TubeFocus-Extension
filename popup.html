@@ -9,8 +9,14 @@
   <div class="popup-container">
     <!-- Header & Toggles -->
     <header>
-      <div class="header-left">TUBE FOCUS</div>
-      <div id="timerDisplay" style="font-size: 1.2rem; color: var(--accent);"></div>
+      <div class="header-left vertical-stack">
+        <span>TUBE</span>
+        <span>FOCUS</span>
+      </div>
+      <!-- Timer Display (Digital Clock Style) -->
+      <div class="timer-container">
+        <span id="timerDisplay" class="digital-timer">⏳</span>
+      </div>
       <div class="toggles">
         <button id="toggleOn" class="active">On</button>
         <button id="toggleOff" class="active">Off</button>
@@ -31,11 +37,11 @@
       <label for="sessionDuration">Session duration (minutes):</label>
       <input type="number" id="sessionDuration" min="1" value="25">
       
-      <label for="scoreMode">Scoring Mode:</label>
-      <select id="scoreMode">
-        <option value="title_and_description">Title + Description</option>
-        <option value="title_only">Title Only</option>
-      </select>
+      <label for="scoreModeBtn">Scoring Mode:</label>
+      <button id="scoreModeBtn" class="scoring-mode-btn">
+        <span id="scoreModeText">Title + Description</span>
+        <span class="arrow">▼</span>
+      </button>
       
       <button id="startSession" class="action">Start Session</button>
       <button id="stopSession"  class="action" disabled>Stop Session</button>
@@ -45,10 +51,6 @@
     <section id="current">
       <strong>Current Video Score (from session):</strong>
       <div id="scoreDisplay">–</div>
-
-      <hr style="margin: 1rem 0; border-color: var(--highlight);">
-
-      <!-- Remove the entire Calculate a One-Time Score section from the popup -->
     </section>
 
     <!-- Summary -->
@@ -58,10 +60,105 @@
       <canvas id="scoreChart" width="240" height="120"></canvas>
     </section>
 
+    <!-- Settings -->
+    <section id="settings">
+      <div class="settings-header">
+        <button id="backToMain" class="back-button">
+          <svg fill="currentColor" height="20px" width="20px" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+            <g>
+              <g>
+                <path d="M441.751,475.584L222.166,256L441.75,36.416c6.101-6.101,7.936-15.275,4.629-23.253C443.094,5.184,435.286,0,426.667,0 H320.001c-5.675,0-11.093,2.24-15.083,6.251L70.251,240.917c-8.341,8.341-8.341,21.824,0,30.165l234.667,234.667 c3.989,4.011,9.408,6.251,15.083,6.251h106.667c8.619,0,16.427-5.184,19.712-13.163 C449.687,490.858,447.852,481.685,441.751,475.584z"/>
+              </g>
+            </g>
+          </svg>
+        </button>
+        <h2>Settings</h2>
+      </div>
+      
+      <!-- Theme Selection -->
+      <div class="settings-row">
+        <div>
+          <span style="font-weight:bold;">Theme</span>
+          <div style="font-size:0.9em; color:#ccc; margin-top:0.2em;">Choose your preferred color scheme</div>
+        </div>
+        <select id="themeSelector" class="theme-selector">
+          <option value="crimson-vanilla">Crimson Flame & Vanilla Cream</option>
+          <option value="vanilla-crimson">Vanilla Cream & Crimson Flame</option>
+          <option value="darkreader">Darkreader Theme</option>
+          <option value="cocoa-lemon">Cocoa Brown & Lemon Zest</option>
+          <option value="golden-ocean">Golden Honey & Ocean Depths</option>
+          <option value="dusty-apricot">Dusty Teal & Pale Apricot</option>
+          <option value="spiced-forest">Spiced Orange & Deep Forest</option>
+        </select>
+      </div>
+      
+      <div class="settings-row">
+        <div>
+          <span style="font-weight:bold;">Share Session History</span>
+          <div style="font-size:0.9em; color:#ccc; margin-top:0.2em;">Allow the extension to upload your session history to the cloud for analysis.</div>
+        </div>
+        <label class="ios-switch">
+          <input type="checkbox" id="shareHistoryToggle" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </section>
+
     <!-- Footer -->
     <footer>
-      <a href="https://www.linkedin.com/in/naveenus" target="_blank">Meet the Creator</a>
+      <span>Meet the Creator</span>
+      <img id="settingsIcon" class="settings-icon" src="Settings.svg" alt="Settings" title="Settings" />
     </footer>
+  </div>
+
+  <!-- Scoring Mode Modal -->
+  <div id="scoringModeModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Select Scoring Parameters</h3>
+        <button id="closeModal" class="close-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-description">Choose which video elements to analyze for relevance to your goal:</p>
+        <div class="checkbox-group">
+          <label class="checkbox-item">
+            <input type="checkbox" id="titleCheck" checked>
+            <span class="checkmark"></span>
+            <div class="checkbox-text">
+              <span class="checkbox-label">Title</span>
+              <span class="checkbox-desc">Video title analysis</span>
+            </div>
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" id="descriptionCheck" checked>
+            <span class="checkmark"></span>
+            <div class="checkbox-text">
+              <span class="checkbox-label">Description</span>
+              <span class="checkbox-desc">Video description analysis</span>
+            </div>
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" id="tagsCheck">
+            <span class="checkmark"></span>
+            <div class="checkbox-text">
+              <span class="checkbox-label">Tags</span>
+              <span class="checkbox-desc">Video tags analysis</span>
+            </div>
+          </label>
+          <label class="checkbox-item">
+            <input type="checkbox" id="categoryCheck">
+            <span class="checkmark"></span>
+            <div class="checkbox-text">
+              <span class="checkbox-label">Category</span>
+              <span class="checkbox-desc">Video category analysis</span>
+            </div>
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button id="applyScoringMode" class="apply-btn">Apply Selection</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Chart.js library -->
