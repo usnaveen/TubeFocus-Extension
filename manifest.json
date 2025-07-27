@@ -17,7 +17,7 @@
   ],
   "host_permissions": [
     "https://*.youtube.com/*",
-    "https://yt-scorer-49646986060.us-central1.run.app/*"
+    "https://yt-scorer-api-bd5usk72uq-uc.a.run.app/*"
   ],
   "background": {
     "service_worker": "background.js"

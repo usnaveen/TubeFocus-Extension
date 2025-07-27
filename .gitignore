@@ -30,3 +30,12 @@ MANIFEST
 
 # Instance Folder
 instance/
+
+# Ignore image assets
+icons/
+*.svg
+*.png
+
+# Ignore documentation and reload instructions
+RELOAD_INSTRUCTIONS.md
+FEEDBACK_UI_UPDATE.md
