@@ -9,61 +9,6 @@ let lastFlashTime = 0;
 let scoreDisplay  = null;
 let lastScores    = null; // Store individual scores for feedback
 
-// Safe storage access function to prevent extension context invalidated errors
-function safeStorageGet(keys, callback) {
-  try {
-    // Check if chrome.runtime is still available
-    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.storage) {
-      console.log('[content.js] Chrome API not available');
-      callback(null);
-      return;
-    }
-    
-    chrome.storage.local.get(keys, (result) => {
-      try {
-        if (chrome.runtime.lastError) {
-          console.log('[content.js] Storage error (ignored):', chrome.runtime.lastError);
-          callback(null);
-          return;
-        }
-        callback(result);
-      } catch (error) {
-        console.log('[content.js] Storage callback error (ignored):', error);
-        callback(null);
-      }
-    });
-  } catch (error) {
-    console.log('[content.js] Storage access error (ignored):', error);
-    callback(null);
-  }
-}
-
-// Safe storage set function
-function safeStorageSet(data, callback) {
-  try {
-    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.storage) {
-      console.log('[content.js] Chrome API not available for storage set');
-      if (callback) callback();
-      return;
-    }
-    
-    chrome.storage.local.set(data, () => {
-      try {
-        if (chrome.runtime.lastError) {
-          console.log('[content.js] Storage set error (ignored):', chrome.runtime.lastError);
-        }
-        if (callback) callback();
-      } catch (error) {
-        console.log('[content.js] Storage set callback error (ignored):', error);
-        if (callback) callback();
-      }
-    });
-  } catch (error) {
-    console.log('[content.js] Storage set access error (ignored):', error);
-    if (callback) callback();
-  }
-}
-
 // Create the score display component
 function createScoreDisplay() {
   if (scoreDisplay) return scoreDisplay;
@@ -221,74 +166,65 @@ async function submitFeedback(userScore) {
 
 // Show feedback success message
 function showFeedbackSuccess() {
-  try {
-    let toast = document.getElementById('tubefocus-feedback-toast');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.id = 'tubefocus-feedback-toast';
-      toast.style.position = 'fixed';
-      toast.style.left = '50%';
-      toast.style.bottom = '32px';
-      toast.style.transform = 'translateX(-50%)';
-      toast.style.background = '#16a34a';
-      toast.style.color = '#fff';
-      toast.style.padding = '14px 32px';
-      toast.style.borderRadius = '8px';
-      toast.style.fontSize = '1.1em';
-      toast.style.fontWeight = 'bold';
-      toast.style.zIndex = 1000000;
-      toast.style.boxShadow = '0 2px 12px #0008';
-      toast.style.textAlign = 'center';
-      document.body.appendChild(toast);
-    }
-    toast.textContent = 'Feedback collected!';
-    toast.style.display = 'block';
-    setTimeout(() => {
-      if (toast && toast.parentNode) {
-        toast.style.display = 'none';
-      }
-    }, 2000);
-  } catch (error) {
-    console.log('[content.js] Feedback toast error (ignored):', error);
+  let toast = document.getElementById('tubefocus-feedback-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'tubefocus-feedback-toast';
+    toast.style.position = 'fixed';
+    toast.style.left = '50%';
+    toast.style.bottom = '32px';
+    toast.style.transform = 'translateX(-50%)';
+    toast.style.background = '#16a34a';
+    toast.style.color = '#fff';
+    toast.style.padding = '14px 32px';
+    toast.style.borderRadius = '8px';
+    toast.style.fontSize = '1.1em';
+    toast.style.fontWeight = 'bold';
+    toast.style.zIndex = 1000000;
+    toast.style.boxShadow = '0 2px 12px #0008';
+    toast.style.textAlign = 'center';
+    document.body.appendChild(toast);
   }
+  toast.textContent = 'Feedback collected!';
+  toast.style.display = 'block';
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, 2000);
 }
 
-// Update the score display with the given score and category
+// Update the score display
 function updateScoreDisplay(score, category = 'Video') {
-  if (!scoreDisplay) return;
+  if (!scoreDisplay) {
+    scoreDisplay = createScoreDisplay();
+  }
   
-  // Format the score as a percentage
   const percentage = Math.round(score * 100);
-  
-  // Determine color based on score
   let color;
   if (score <= 0.3) {
-    color = '#dc2626'; // Red
+    color = '#dc2626'; // Red for low scores
   } else if (score >= 0.8) {
-    color = '#16a34a'; // Green
+    color = '#16a34a'; // Green for high scores
   } else {
-    color = '#f59e0b'; // Yellow/Orange
+    // Interpolate between red and green for medium scores
+    const red = '#dc2626';
+    const green = '#16a34a';
+    const ratio = (score - 0.3) / (0.8 - 0.3); // 0.3 to 0.8
+    const r = Math.round((red[1] - green[1]) * ratio + green[1]);
+    const g = Math.round((red[2] - green[2]) * ratio + green[2]);
+    color = `#${r}${g}00`; // Format as #RRGGBB
   }
   
   scoreDisplay.innerHTML = `
-    <div style="font-size: 14px; font-weight: bold;">${percentage}%</div>
-    <div style="font-size: 10px; opacity: 0.8;">${category}</div>
+    <div style="font-size: 16px; margin-bottom: 2px;">${percentage}%</div>
+    <div style="font-size: 10px; opacity: 0.7;">${category}</div>
   `;
   scoreDisplay.style.color = color;
   scoreDisplay.style.borderColor = color;
   scoreDisplay.style.opacity = '1';
   scoreDisplay.style.transform = 'translateY(0)';
   
-  // Add theme-aware styling with safe storage access
-  safeStorageGet('selectedTheme', (prefs) => {
-    if (!prefs) {
-      // Use default styling if storage is not available
-      scoreDisplay.style.background = '';
-      scoreDisplay.style.color = '';
-      scoreDisplay.style.borderColor = '';
-      return;
-    }
-    
+  // Add theme-aware styling
+  chrome.storage.local.get('selectedTheme', (prefs) => {
     const theme = prefs.selectedTheme || 'crimson-vanilla';
     if (theme !== 'crimson-vanilla') {
       // Use theme colors for the score display background
@@ -311,46 +247,6 @@ function updateScoreDisplay(score, category = 'Video') {
       scoreDisplay.style.background = '';
       scoreDisplay.style.color = '';
       scoreDisplay.style.borderColor = '';
-    }
-  });
-}
-
-// Show waiting for score message
-function showWaitingForScore() {
-  if (!scoreDisplay) return;
-  
-  scoreDisplay.innerHTML = `
-    <div style="font-size: 12px; font-weight: bold;">Waiting for score...</div>
-    <div style="font-size: 10px; opacity: 0.8;">Analyzing video</div>
-  `;
-  scoreDisplay.style.color = '#6b7280'; // Gray color
-  scoreDisplay.style.borderColor = '#6b7280';
-  scoreDisplay.style.opacity = '1';
-  scoreDisplay.style.transform = 'translateY(0)';
-  
-  // Reset to default theme colors
-  scoreDisplay.style.background = '';
-}
-
-// Reset to default colors (no score applied)
-function resetToDefaultColors() {
-  // Reset page background
-  document.documentElement.style.removeProperty('background');
-  document.body.style.removeProperty('background');
-  
-  // Reset YouTube containers
-  const els = [
-    document.getElementById('masthead'),
-    document.querySelector('ytd-app'),
-    document.querySelector('ytd-page-manager'),
-    document.querySelector('#content'),
-    document.querySelector('#container'),
-    document.querySelector('ytd-feed-filter-chip-bar-renderer')
-  ];
-  els.forEach(el => {
-    if (el) {
-      el.style.removeProperty('background');
-      el.style.removeProperty('background-color');
     }
   });
 }
@@ -478,22 +374,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'START_SESSION') {
     sessionActive = true;
     userGoal = message.goal;
-    lastVideoId = null;
-    currentScore = null;
-    
-    // Reset to default colors and show waiting message
-    resetToDefaultColors();
-    if (scoreDisplay) {
-      showWaitingForScore();
-    }
-    
+    hideScoreDisplay(); // Hide display when session starts
     sendResponse({ success: true });
   } else if (message.type === 'STOP_SESSION') {
     sessionActive = false;
     userGoal = '';
-    hideScoreDisplay();
+    hideScoreDisplay(); // Hide display when session stops
     removeOverlay();
-    resetToDefaultColors();
     sendResponse({ success: true });
   } else if (message.type === 'THEME_CHANGED') {
     // Update the score display with new theme colors
@@ -504,14 +391,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // hydrate state on load
-safeStorageGet(
+chrome.storage.local.get(
   ['sessionActive','goal','lastVideoId','currentScore','selectedTheme'],
   prefs => {
-    if (!prefs) {
-      console.log('[content.js] Storage not available on load');
-      return;
-    }
-    
     sessionActive = !!prefs.sessionActive;
     userGoal      = prefs.goal || '';
     lastVideoId   = prefs.lastVideoId || null;
@@ -525,9 +407,6 @@ safeStorageGet(
     if (sessionActive && m && m[1] === lastVideoId && currentScore != null) {
       applyColor(currentScore);
       chrome.runtime.sendMessage({ type: 'NEW_SCORE', score: currentScore });
-    } else if (sessionActive) {
-      // Session is active but no score yet - show waiting message
-      showWaitingForScore();
     }
   }
 );
@@ -539,12 +418,7 @@ chrome.runtime.onMessage.addListener(msg => {
     userGoal      = msg.goal;
     lastVideoId   = null;
     currentScore  = null;
-    
-    // Reset to default colors and show waiting message
-    resetToDefaultColors();
-    showWaitingForScore();
-    
-    safeStorageSet({ lastVideoId:null, currentScore:null });
+    chrome.storage.local.set({ lastVideoId:null, currentScore:null });
     console.log('[content.js] session STARTED:', userGoal);
   }
   if (msg.type === 'SESSION_STOPPED') {
@@ -552,7 +426,6 @@ chrome.runtime.onMessage.addListener(msg => {
     // Remove overlay if present
     const overlay = document.getElementById('tubefocus-overlay');
     if (overlay) overlay.remove();
-    resetToDefaultColors();
     console.log('[content.js] session STOPPED, overlay removed');
   }
   if (msg.type === 'SCORE_MODE_CHANGED') {
@@ -619,203 +492,48 @@ async function reScoreWithNewMode(newMode) {
   const m = location.href.match(/[?&]v=([^&]+)/);
   if (!m) return;
   const vid = m[1];
-  
-  safeStorageGet('goal', async prefs => {
-    const goal = (prefs && prefs.goal) || userGoal;
-    // Use the new mode for this fetch
-    chrome.runtime.sendMessage({ type:'FETCH_SCORE', url: location.href, goal, scoreMode: newMode }, r => {
-      if (chrome.runtime.lastError) {
-        console.log('[content.js] Could not update score for new mode - server not available');
-        return;
-      }
-      if (r.error) {
-        showErrorOverlay('Could not update score for new mode.');
-        return;
-      }
-      currentScore = r.score;
-      lastVideoId = vid;
-      applyColor(currentScore);
-      // Briefly flash overlay to indicate update
-      let overlay = document.getElementById('tubefocus-overlay');
-      if (overlay) {
-        overlay.style.transition = 'opacity 0.2s';
-        overlay.style.opacity = '0.5';
-        setTimeout(() => { overlay.style.opacity = '0.25'; }, 600);
-      }
-      chrome.runtime.sendMessage({ type:'NEW_SCORE', score: currentScore });
-      safeStorageGet('watchedScores', d => {
-        const arr = (d && d.watchedScores) || [];
-        arr.push(currentScore);
-        safeStorageSet({
-          watchedScores: arr,
-          lastVideoId,
-          currentScore
+  try {
+    chrome.storage.local.get('goal', async prefs => {
+      const goal = prefs.goal || userGoal;
+      // Use the new mode for this fetch
+      chrome.runtime.sendMessage({ type:'FETCH_SCORE', url: location.href, goal, scoreMode: newMode }, r => {
+        if (chrome.runtime.lastError) {
+          console.log('[content.js] Could not update score for new mode - server not available');
+          return;
+        }
+        if (r.error) {
+          showErrorOverlay('Could not update score for new mode.');
+          return;
+        }
+        currentScore = r.score;
+        lastVideoId = vid;
+        applyColor(currentScore);
+        // Briefly flash overlay to indicate update
+        let overlay = document.getElementById('tubefocus-overlay');
+        if (overlay) {
+          overlay.style.transition = 'opacity 0.2s';
+          overlay.style.opacity = '0.5';
+          setTimeout(() => { overlay.style.opacity = '0.25'; }, 600);
+        }
+        chrome.runtime.sendMessage({ type:'NEW_SCORE', score: currentScore });
+        chrome.storage.local.get('watchedScores', d => {
+          const arr = d.watchedScores||[];
+          arr.push(currentScore);
+          chrome.storage.local.set({
+            watchedScores: arr,
+            lastVideoId,
+            currentScore
+          });
         });
       });
     });
-  });
-}
-
-// API comparison function to test all three endpoints
-async function compareAPIs(url, goal, scoreMode) {
-  const results = {
-    cloud: null,
-    flask: null,
-    docker: null,
-    timestamp: Date.now()
-  };
-  
-  console.log(`[API Comparison] Testing video: ${url}, goal: ${goal}, mode: ${scoreMode}`);
-  
-  // Test Cloud API
-  try {
-    const cloudResponse = await fetch(`${CONFIG.API_BASE_URL}/predict`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-KEY': CONFIG.API_KEY
-      },
-      body: JSON.stringify({
-        video_id: url.match(/[?&]v=([^&]+)/)?.[1] || '',
-        goal: goal,
-        parameters: Array.isArray(scoreMode) ? scoreMode : ['title', 'description', 'tags', 'category']
-      })
-    });
-    if (cloudResponse.ok) {
-      results.cloud = await cloudResponse.json();
-      console.log('[API Comparison] Cloud API result:', results.cloud);
-    }
-  } catch (error) {
-    console.log('[API Comparison] Cloud API error:', error.message);
+  } catch (e) {
+    const msg = e.message||'';
+    // Always show error overlay for any backend error
+    showErrorOverlay('Scoring error: ' + msg);
+    chrome.runtime.sendMessage({ type: 'ERROR', error: 'Scoring error: ' + msg });
+    console.error('[content.js] scoring error:', e);
   }
-  
-  // Test Local Flask API
-  try {
-    const flaskResponse = await fetch(`${CONFIG.LOCAL_FLASK_URL}/predict`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-KEY': CONFIG.API_KEY
-      },
-      body: JSON.stringify({
-        video_id: url.match(/[?&]v=([^&]+)/)?.[1] || '',
-        goal: goal,
-        parameters: Array.isArray(scoreMode) ? scoreMode : ['title', 'description', 'tags', 'category']
-      })
-    });
-    if (flaskResponse.ok) {
-      results.flask = await flaskResponse.json();
-      console.log('[API Comparison] Flask API result:', results.flask);
-    }
-  } catch (error) {
-    console.log('[API Comparison] Flask API error:', error.message);
-  }
-  
-  // Test Local Docker API
-  try {
-    const dockerResponse = await fetch(`${CONFIG.LOCAL_DOCKER_URL}/predict`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-KEY': CONFIG.API_KEY
-      },
-      body: JSON.stringify({
-        video_id: url.match(/[?&]v=([^&]+)/)?.[1] || '',
-        goal: goal,
-        parameters: Array.isArray(scoreMode) ? scoreMode : ['title', 'description', 'tags', 'category']
-      })
-    });
-    if (dockerResponse.ok) {
-      results.docker = await dockerResponse.json();
-      console.log('[API Comparison] Docker API result:', results.docker);
-    }
-  } catch (error) {
-    console.log('[API Comparison] Docker API error:', error.message);
-  }
-  
-  return results;
-}
-
-// Update score display to show comparison results
-function updateScoreDisplayComparison(apiResults, category = 'Video') {
-  if (!scoreDisplay) return;
-  
-  // Use Cloud API result as primary (fallback to others)
-  const primaryResult = apiResults.cloud || apiResults.flask || apiResults.docker;
-  if (!primaryResult) {
-    showWaitingForScore();
-    return;
-  }
-  
-  const score = primaryResult.score;
-  const percentage = Math.round(score * 100);
-  
-  // Determine color based on score
-  let color;
-  if (score <= 0.3) {
-    color = '#dc2626'; // Red
-  } else if (score >= 0.8) {
-    color = '#16a34a'; // Green
-  } else {
-    color = '#f59e0b'; // Yellow/Orange
-  }
-  
-  // Create comparison display
-  const cloudScore = apiResults.cloud ? Math.round(apiResults.cloud.score * 100) : 'N/A';
-  const flaskScore = apiResults.flask ? Math.round(apiResults.flask.score * 100) : 'N/A';
-  const dockerScore = apiResults.docker ? Math.round(apiResults.docker.score * 100) : 'N/A';
-  
-  scoreDisplay.innerHTML = `
-    <div style="font-size: 14px; font-weight: bold; margin-bottom: 4px;">${percentage}%</div>
-    <div style="font-size: 9px; opacity: 0.8; margin-bottom: 2px;">${category}</div>
-    <div style="font-size: 8px; opacity: 0.7; line-height: 1.2;">
-      <div>Cloud: ${cloudScore}%</div>
-      <div>Flask: ${flaskScore}%</div>
-      <div>Docker: ${dockerScore}%</div>
-    </div>
-  `;
-  
-  scoreDisplay.style.color = color;
-  scoreDisplay.style.borderColor = color;
-  scoreDisplay.style.opacity = '1';
-  scoreDisplay.style.transform = 'translateY(0)';
-  scoreDisplay.style.minWidth = '80px';
-  scoreDisplay.style.maxWidth = '120px';
-  
-  // Add theme-aware styling with safe storage access
-  safeStorageGet('selectedTheme', (prefs) => {
-    if (!prefs) {
-      // Use default styling if storage is not available
-      scoreDisplay.style.background = '';
-      scoreDisplay.style.color = '';
-      scoreDisplay.style.borderColor = '';
-      return;
-    }
-    
-    const theme = prefs.selectedTheme || 'crimson-vanilla';
-    if (theme !== 'crimson-vanilla') {
-      // Use theme colors for the score display background
-      const themeColors = {
-        'cocoa-lemon': { bg: '#774123', text: '#f3e924' },
-        'crimson-vanilla': { bg: '#c1121f', text: '#fdf0d5' },
-        'golden-ocean': { bg: '#1d352', text: '#efc142' },
-        'dusty-apricot': { bg: '#418994', text: '#fadfca' },
-        'spiced-forest': { bg: '#263226', text: '#f68238' },
-        'darkreader': { bg: '#181e22', text: '#ddd' }
-      };
-      
-      if (themeColors[theme]) {
-        scoreDisplay.style.background = `rgba(${themeColors[theme].bg}, 0.9)`;
-        scoreDisplay.style.color = themeColors[theme].text;
-        scoreDisplay.style.borderColor = themeColors[theme].text;
-      }
-    } else {
-      // Reset to default theme colors
-      scoreDisplay.style.background = '';
-      scoreDisplay.style.color = '';
-      scoreDisplay.style.borderColor = '';
-    }
-  });
 }
 
 // main loop
@@ -835,18 +553,10 @@ async function tryScore() {
   }
 
   lastVideoId = vid;
-  
-  // Ensure score display is created
-  if (!scoreDisplay) {
-    scoreDisplay = createScoreDisplay();
-  }
-  
-  // Show waiting for score message
-  showWaitingForScore();
 
   // Fetch and send videoId if sharing is enabled
-  safeStorageGet(['shareHistoryEnabled'], prefs => {
-    if (prefs && prefs.shareHistoryEnabled) {
+  chrome.storage.local.get(['shareHistoryEnabled'], prefs => {
+    if (prefs.shareHistoryEnabled) {
       // Extract videoId from URL
       const m = location.href.match(/[?&]v=([^&]+)/);
       if (m && m[1]) {
@@ -855,88 +565,47 @@ async function tryScore() {
     }
   });
 
-  safeStorageGet('scoreMode', prefs => {
-    const scoreMode = (prefs && prefs.scoreMode) || ['title', 'description'];
-    
-    if (CONFIG.ENABLE_API_COMPARISON) {
-      // Use API comparison mode
-      compareAPIs(location.href, userGoal, scoreMode).then(apiResults => {
-        // Use Cloud API result as primary (fallback to others)
-        const primaryResult = apiResults.cloud || apiResults.flask || apiResults.docker;
-        if (primaryResult) {
-          currentScore = primaryResult.score;
-          lastScores = primaryResult; // Store individual scores for feedback
-          applyColor(currentScore);
-          
-          // Get video category from the response
-          console.log('API Comparison Results:', apiResults);
-          const category = primaryResult.category_name || 'Video';
-          console.log('Using category:', category);
-          
-          // Update score display with comparison results
-          updateScoreDisplayComparison(apiResults, category);
+  chrome.storage.local.get('scoreMode', prefs => {
+    const scoreMode = prefs.scoreMode || ['title', 'description'];
+    fetchScore(location.href, userGoal, scoreMode).then(response => {
+      currentScore = response.score;
+      lastScores = response; // Store individual scores for feedback
+      applyColor(currentScore);
+      
+      // Get video category from the response
+      console.log('Response from scoring API:', response);
+      const category = response.category_name || 'Video'; // Use actual category name or fallback
+      console.log('Using category:', category);
+      
+      // Update score display with category
+      updateScoreDisplay(currentScore, category);
 
-          chrome.runtime.sendMessage({ type:'NEW_SCORE', score: currentScore });
+      chrome.runtime.sendMessage({ type:'NEW_SCORE', score: currentScore });
 
-          safeStorageGet('watchedScores', d => {
-            const arr = (d && d.watchedScores) || [];
-            arr.push(currentScore);
-            safeStorageSet({
-              watchedScores: arr,
-              lastVideoId,
-              currentScore
-            });
-          });
-        } else {
-          console.log('[content.js] No API results available');
-          showWaitingForScore();
-        }
-      }).catch(e => {
-        console.error('[content.js] API comparison error:', e);
-        showWaitingForScore();
-      });
-    } else {
-      // Use original single API mode
-      fetchScore(location.href, userGoal, scoreMode).then(response => {
-        currentScore = response.score;
-        lastScores = response; // Store individual scores for feedback
-        applyColor(currentScore);
-        
-        // Get video category from the response
-        console.log('Response from scoring API:', response);
-        const category = response.category_name || 'Video'; // Use actual category name or fallback
-        console.log('Using category:', category);
-        
-        // Update score display with category
-        updateScoreDisplay(currentScore, category);
-
-        chrome.runtime.sendMessage({ type:'NEW_SCORE', score: currentScore });
-
-        safeStorageGet('watchedScores', d => {
-          const arr = (d && d.watchedScores) || [];
-          arr.push(currentScore);
-          safeStorageSet({
-            watchedScores: arr,
-            lastVideoId,
-            currentScore
-          });
+      chrome.storage.local.get('watchedScores', d => {
+        const arr = d.watchedScores||[];
+        arr.push(currentScore);
+        chrome.storage.local.set({
+          watchedScores: arr,
+          lastVideoId,
+          currentScore
         });
-      }).catch(e => {
-        const msg = e.message||'';
-        
-        // Handle different types of errors gracefully
-        if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-          console.log('[content.js] Scoring server not available - this is normal if the ML server is not running');
-          // Don't show error overlay for network issues, just log it
-          return;
-        }
-        
-        // Show error overlay for other types of errors
-        showErrorOverlay('Scoring error: ' + msg);
-        chrome.runtime.sendMessage({ type: 'ERROR', error: 'Scoring error: ' + msg });
-        console.error('[content.js] scoring error:', e);
       });
-    }
+    }).catch(e => {
+      const msg = e.message||'';
+      
+      // Handle different types of errors gracefully
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        console.log('[content.js] Scoring server not available - this is normal if the ML server is not running');
+        // Don't show error overlay for network issues, just log it
+        return;
+      }
+      
+      // Show error overlay for other types of errors
+      showErrorOverlay('Scoring error: ' + msg);
+      chrome.runtime.sendMessage({ type: 'ERROR', error: 'Scoring error: ' + msg });
+      console.error('[content.js] scoring error:', e);
+    });
   });
 }
 

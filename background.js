@@ -1,9 +1,9 @@
 // background.js
 console.log('[background] service worker started');
 
-// Configuration - now using Cloud Run API
+// Configuration - will be updated for production
 const CONFIG = {
-  API_BASE_URL: 'https://yt-scorer-api-bd5usk72uq-uc.a.run.app', // Google Cloud Run API
+  API_BASE_URL: 'http://localhost:8080', // Change to Cloud Run URL when deployed
   API_KEY: 'changeme'
 };
 
@@ -63,11 +63,7 @@ async function fetchCategoryName(categoryId) {
 
 // --- Message listener ---
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'TEST_CONNECTION') {
-    // Test connection handler for debugging
-    console.log('[background] Test connection received');
-    sendResponse({ status: 'connected', timestamp: Date.now() });
-  } else if (msg.type === 'THEME_CHANGED') {
+  if (msg.type === 'THEME_CHANGED') {
     // Forward theme change to all content scripts
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach(tab => {
@@ -80,14 +76,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
   } else
   if (msg.type === 'START_SESSION') {
-    console.log('[background] START_SESSION received:', msg);
     const endTime = Date.now() + msg.duration * 60 * 1000;
     chrome.storage.local.set({ sessionActive: true, sessionEndTime: endTime, goal: msg.goal, scoreMode: msg.scoreMode, watchedScores: [] }, () => {
       chrome.alarms.create('sessionEnd', { delayInMinutes: msg.duration });
-      sendResponse({ success: true });
     });
     sessionVideos = [];
-    return true; // Keep message channel open
   } else if (msg.type === 'STOP_SESSION') {
     chrome.storage.local.get(['sessionActive', 'goal', 'shareHistoryEnabled'], prefs => {
       if (prefs.sessionActive && prefs.shareHistoryEnabled && sessionVideos.length > 0) {
