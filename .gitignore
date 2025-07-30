@@ -54,6 +54,8 @@ screenshot of ui.png
 error.jpg
 Left Arrow Return Icon.svg
 libs/html2canvas.min.js
+FEEDBACK_UI_UPDATE.md
+RELOAD_INSTRUCTIONS.md
 
 # Ignore development files
 .cursor/
