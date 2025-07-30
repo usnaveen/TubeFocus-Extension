@@ -192,61 +192,73 @@ function showFeedbackSuccess() {
   }, 2000);
 }
 
-// Update the score display
-function updateScoreDisplay(score, category = 'Video') {
+// NEW: Update the score display with various states
+function updateScoreDisplay(state, data = {}) {
   if (!scoreDisplay) {
     scoreDisplay = createScoreDisplay();
   }
-  
-  const percentage = Math.round(score * 100);
-  let color;
-  if (score <= 0.3) {
-    color = '#dc2626'; // Red for low scores
-  } else if (score >= 0.8) {
-    color = '#16a34a'; // Green for high scores
-  } else {
-    // Interpolate between red and green for medium scores
-    const red = '#dc2626';
-    const green = '#16a34a';
-    const ratio = (score - 0.3) / (0.8 - 0.3); // 0.3 to 0.8
-    const r = Math.round((red[1] - green[1]) * ratio + green[1]);
-    const g = Math.round((red[2] - green[2]) * ratio + green[2]);
-    color = `#${r}${g}00`; // Format as #RRGGBB
+
+  let html = '';
+  let color = '#fff';
+  let borderColor = 'rgba(255, 255, 255, 0.1)';
+
+  switch (state) {
+    case 'loading':
+      html = `<div style="font-size: 12px; opacity: 0.8;">Calculating...</div>`;
+      color = '#ccc';
+      borderColor = '#888';
+      break;
+    case 'error':
+      html = `<div style="font-size: 12px; opacity: 0.9;">${data.message || 'Error'}</div>`;
+      color = '#dc2626';
+      borderColor = '#dc2626';
+      break;
+    case 'success':
+      const score = data.score;
+      const percentage = Math.round(score * 100);
+      if (score <= 0.3) color = '#dc2626';
+      else if (score >= 0.8) color = '#16a34a';
+      else {
+        const r1 = 220, g1 = 38, b1 = 38;
+        const r2 = 22, g2 = 163, b2 = 74;
+        const ratio = (score - 0.3) / 0.5;
+        const r = Math.round(r1 + (r2 - r1) * ratio);
+        const g = Math.round(g1 + (g2 - g1) * ratio);
+        const b = Math.round(b1 + (b2 - b1) * ratio);
+        color = `rgb(${r}, ${g}, ${b})`;
+      }
+      borderColor = color;
+      html = `
+        <div style="font-size: 16px; margin-bottom: 2px;">${percentage}%</div>
+        <div style="font-size: 10px; opacity: 0.7;">${data.category || 'Video'}</div>
+      `;
+      break;
   }
-  
-  scoreDisplay.innerHTML = `
-    <div style="font-size: 16px; margin-bottom: 2px;">${percentage}%</div>
-    <div style="font-size: 10px; opacity: 0.7;">${category}</div>
-  `;
+
+  scoreDisplay.innerHTML = html;
   scoreDisplay.style.color = color;
-  scoreDisplay.style.borderColor = color;
+  scoreDisplay.style.borderColor = borderColor;
   scoreDisplay.style.opacity = '1';
   scoreDisplay.style.transform = 'translateY(0)';
-  
-  // Add theme-aware styling
+
+  // Restore theme-aware styling
   chrome.storage.local.get('selectedTheme', (prefs) => {
     const theme = prefs.selectedTheme || 'crimson-vanilla';
-    if (theme !== 'crimson-vanilla') {
-      // Use theme colors for the score display background
-      const themeColors = {
-        'cocoa-lemon': { bg: '#774123', text: '#f3e924' },
-        'crimson-vanilla': { bg: '#c1121f', text: '#fdf0d5' },
-        'golden-ocean': { bg: '#1d352', text: '#efc142' },
-        'dusty-apricot': { bg: '#418994', text: '#fadfca' },
-        'spiced-forest': { bg: '#263226', text: '#f68238' },
-        'darkreader': { bg: '#181e22', text: '#ddd' }
-      };
-      
-      if (themeColors[theme]) {
-        scoreDisplay.style.background = `rgba(${themeColors[theme].bg}, 0.9)`;
-        scoreDisplay.style.color = themeColors[theme].text;
-        scoreDisplay.style.borderColor = themeColors[theme].text;
-      }
+    const themeColors = {
+      'cocoa-lemon': { bg: '#774123', text: '#f3e924' },
+      'crimson-vanilla': { bg: '#c1121f', text: '#fdf0d5' },
+      'golden-ocean': { bg: '#1d352f', text: '#efc142' },
+      'dusty-apricot': { bg: '#418994', text: '#fadfca' },
+      'spiced-forest': { bg: '#263226', text: '#f68238' },
+      'darkreader': { bg: '#181e22', text: '#ddd' }
+    };
+
+    if (themeColors[theme] && theme !== 'crimson-vanilla') {
+      scoreDisplay.style.background = themeColors[theme].bg;
+      // Let the state (success/error) control the text color for better contrast
     } else {
-      // Reset to default theme colors
-      scoreDisplay.style.background = '';
-      scoreDisplay.style.color = '';
-      scoreDisplay.style.borderColor = '';
+      // Reset to default for the base theme
+      scoreDisplay.style.background = 'rgba(0, 0, 0, 0.4)';
     }
   });
 }
@@ -261,30 +273,24 @@ function hideScoreDisplay() {
 
 // apply a green→red gradient across the page and key YouTube containers
 function applyColor(score) {
-  // Use the same color scheme as the reference
-  let primary;
-  if (score <= 0.3) {
-    primary = '#dc2626'; // Red
-  } else if (score >= 0.8) {
-    primary = '#16a34a'; // Green
-  } else {
-    // Interpolate between red and green for medium scores
-    // We'll use a simple linear interpolation between the two colors
-    // Red: #dc2626, Green: #16a34a
-    const r1 = 220, g1 = 38, b1 = 38; // Red
-    const r2 = 22, g2 = 163, b2 = 74; // Green
-    const ratio = (score - 0.3) / (0.8 - 0.3);
-    const r = Math.round(r1 + (r2 - r1) * ratio);
-    const g = Math.round(g1 + (g2 - g1) * ratio);
-    const b = Math.round(b1 + (b2 - b1) * ratio);
-    primary = `rgb(${r},${g},${b})`;
+  let primary = 'transparent';
+  
+  if (score !== null && score !== undefined) {
+    if (score <= 0.3) primary = '#dc2626';
+    else if (score >= 0.8) primary = '#16a34a';
+    else {
+      const r1 = 220, g1 = 38, b1 = 38; // Red
+      const r2 = 22, g2 = 163, b2 = 74; // Green
+      const ratio = (score - 0.3) / 0.5;
+      const r = Math.round(r1 + (r2 - r1) * ratio);
+      const g = Math.round(g1 + (g2 - g1) * ratio);
+      const b = Math.round(b1 + (b2 - b1) * ratio);
+      primary = `rgb(${r}, ${g}, ${b})`;
+    }
   }
 
-  // Set background color of the page and main containers
-  document.documentElement.style.setProperty('background', primary, 'important');
-  document.body.style.setProperty('background', primary, 'important');
-
   const els = [
+    document.documentElement, document.body,
     document.getElementById('masthead'),
     document.querySelector('ytd-app'),
     document.querySelector('ytd-page-manager'),
@@ -298,18 +304,34 @@ function applyColor(score) {
       el.style.setProperty('background-color', primary, 'important');
     }
   });
+}
 
-  // Update the score display
-  updateScoreDisplay(score);
+// NEW: Revert all color changes to restore the page to its original state
+function removeColor() {
+  const els = [
+    document.documentElement, document.body,
+    document.getElementById('masthead'),
+    document.querySelector('ytd-app'),
+    document.querySelector('ytd-page-manager'),
+    document.querySelector('#content'),
+    document.querySelector('#container'),
+    document.querySelector('ytd-feed-filter-chip-bar-renderer')
+  ];
+  els.forEach(el => {
+    if (el) {
+      el.style.removeProperty('background');
+      el.style.removeProperty('background-color');
+    }
+  });
 }
 
 // Show error overlay (now flashes red and shows a toast message at the bottom)
 function showErrorOverlay(msg) {
+  // This function can remain as is for the flash effect, but the score display
+  // will be handled by updateScoreDisplay('error', ...).
   const now = Date.now();
-  // Only flash if at least 2 seconds have passed since last flash
   if (now - lastFlashTime > 2000) {
     lastFlashTime = now;
-    // Flash the screen red (more visible)
     let flash = document.createElement('div');
     flash.style.position = 'fixed';
     flash.style.top = 0;
@@ -320,47 +342,33 @@ function showErrorOverlay(msg) {
     flash.style.background = 'rgba(200,0,0,0.97)';
     flash.style.pointerEvents = 'none';
     flash.style.transition = 'opacity 0.7s';
-    console.log('[TubeFocus] Showing error flash overlay');
     document.documentElement.appendChild(flash);
     setTimeout(() => {
       flash.style.opacity = '0';
-      setTimeout(() => {
-        flash.remove();
-        console.log('[TubeFocus] Error flash overlay removed');
-      }, 700);
+      setTimeout(() => flash.remove(), 700);
     }, 1000);
   }
-
-  // Show a toast message at the bottom
-  let toast = document.getElementById('tubefocus-toast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'tubefocus-toast';
-    toast.style.position = 'fixed';
-    toast.style.left = '50%';
-    toast.style.bottom = '32px';
-    toast.style.transform = 'translateX(-50%)';
-    toast.style.background = 'rgba(40,40,40,0.95)';
-    toast.style.color = '#fff';
-    toast.style.padding = '12px 28px';
-    toast.style.borderRadius = '8px';
-    toast.style.fontSize = '1.1em';
-    toast.style.fontWeight = 'bold';
-    toast.style.zIndex = 1000000;
-    toast.style.boxShadow = '0 2px 12px #0008';
-    document.body.appendChild(toast);
-  }
-  toast.textContent = msg || "Can't connect to the scoring backend.";
-  toast.style.display = 'block';
 }
 
 // ask background.js to score
-function fetchScore(url, goal, scoreMode = null) {
+function fetchScore(url, goal, scoringData = null) {
   return new Promise((res, rej) => {
     const message = { type:'FETCH_SCORE', url, goal };
-    if (scoreMode) {
-      message.scoreMode = scoreMode;
+    
+    // Handle new scoring mode structure
+    if (scoringData) {
+      if (scoringData.type === 'simple') {
+        message.scoringType = 'simple';
+        message.simpleMode = scoringData.simpleMode || 'title_and_description';
+      } else if (scoringData.type === 'advanced') {
+        message.scoringType = 'advanced';
+        message.advancedMode = scoringData.advancedMode || ['title', 'description'];
+      } else {
+        // Legacy support for old scoreMode format
+        message.scoreMode = scoringData;
+      }
     }
+    
     chrome.runtime.sendMessage(message, r => {
       if (chrome.runtime.lastError) return rej(new Error(chrome.runtime.lastError.message));
       if (r.error)                 return rej(new Error(r.error));
@@ -369,30 +377,52 @@ function fetchScore(url, goal, scoreMode = null) {
   });
 }
 
-// Listen for messages from popup
+// Listen for all messages from other parts of the extension
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'START_SESSION') {
-    sessionActive = true;
-    userGoal = message.goal;
-    hideScoreDisplay(); // Hide display when session starts
-    sendResponse({ success: true });
-  } else if (message.type === 'STOP_SESSION') {
-    sessionActive = false;
-    userGoal = '';
-    hideScoreDisplay(); // Hide display when session stops
-    removeOverlay();
-    sendResponse({ success: true });
-  } else if (message.type === 'THEME_CHANGED') {
-    // Update the score display with new theme colors
-    if (scoreDisplay && currentScore !== null) {
-      updateScoreDisplay(currentScore, lastScores?.category_name || 'Video');
-    }
+  switch (message.type) {
+    case 'START_SESSION':
+      sessionActive = true;
+      userGoal = message.goal;
+      hideScoreDisplay(); // Hide display when session starts
+      console.log('[content.js] session STARTED:', userGoal);
+      sendResponse({ success: true });
+      break;
+      
+    case 'STOP_SESSION':
+    case 'SESSION_STOPPED': // Handling both just in case
+      sessionActive = false;
+      userGoal = '';
+      hideScoreDisplay(); // Hide display when session stops
+      removeOverlay();    // Explicitly remove the error toast
+      console.log('[content.js] session STOPPED, overlay removed');
+      sendResponse({ success: true });
+      break;
+
+    case 'THEME_CHANGED':
+      // Update the score display with new theme colors
+      if (scoreDisplay && currentScore !== null) {
+        updateScoreDisplay(currentScore, lastScores?.category_name || 'Video');
+      }
+      break;
+
+    case 'SCORE_MODE_CHANGED':
+      reScoreWithNewMode(message.mode);
+      break;
+
+    case 'RELOAD_WITH_TIMESTAMP':
+      reloadWithTimestamp();
+      break;
+
+    case 'SESSION_ENDED_AUTO':
+      // Auto-refresh when session ends
+      reloadWithTimestamp();
+      break;
   }
 });
 
 // hydrate state on load
 chrome.storage.local.get(
-  ['sessionActive','goal','lastVideoId','currentScore','selectedTheme'],
+  ['sessionActive','goal','lastVideoId','currentScore','selectedTheme','scoringType','simpleMode','advancedMode'],
   prefs => {
     sessionActive = !!prefs.sessionActive;
     userGoal      = prefs.goal || '';
@@ -410,35 +440,6 @@ chrome.storage.local.get(
     }
   }
 );
-
-// react to popup start/stop and mode change
-chrome.runtime.onMessage.addListener(msg => {
-  if (msg.type === 'SESSION_STARTED') {
-    sessionActive = true;
-    userGoal      = msg.goal;
-    lastVideoId   = null;
-    currentScore  = null;
-    chrome.storage.local.set({ lastVideoId:null, currentScore:null });
-    console.log('[content.js] session STARTED:', userGoal);
-  }
-  if (msg.type === 'SESSION_STOPPED') {
-    sessionActive = false;
-    // Remove overlay if present
-    const overlay = document.getElementById('tubefocus-overlay');
-    if (overlay) overlay.remove();
-    console.log('[content.js] session STOPPED, overlay removed');
-  }
-  if (msg.type === 'SCORE_MODE_CHANGED') {
-    reScoreWithNewMode(msg.mode);
-  }
-  if (msg.type === 'RELOAD_WITH_TIMESTAMP') {
-    reloadWithTimestamp();
-  }
-  if (msg.type === 'SESSION_ENDED_AUTO') {
-    // Auto-refresh when session ends
-    reloadWithTimestamp();
-  }
-});
 
 function reloadWithTimestamp() {
   // Only run on YouTube watch pages
@@ -495,8 +496,31 @@ async function reScoreWithNewMode(newMode) {
   try {
     chrome.storage.local.get('goal', async prefs => {
       const goal = prefs.goal || userGoal;
+      
+      // Handle new scoring mode structure
+      let scoringData = null;
+      if (newMode.type === 'simple') {
+        scoringData = {
+          type: 'simple',
+          simpleMode: newMode.simpleMode || 'title_and_description'
+        };
+      } else if (newMode.type === 'advanced') {
+        scoringData = {
+          type: 'advanced',
+          advancedMode: newMode.advancedMode || ['title', 'description']
+        };
+      } else {
+        // Legacy support for old format
+        scoringData = newMode;
+      }
+      
       // Use the new mode for this fetch
-      chrome.runtime.sendMessage({ type:'FETCH_SCORE', url: location.href, goal, scoreMode: newMode }, r => {
+      chrome.runtime.sendMessage({ 
+        type:'FETCH_SCORE', 
+        url: location.href, 
+        goal, 
+        ...scoringData 
+      }, r => {
         if (chrome.runtime.lastError) {
           console.log('[content.js] Could not update score for new mode - server not available');
           return;
@@ -538,11 +562,14 @@ async function reScoreWithNewMode(newMode) {
 
 // main loop
 async function tryScore() {
-  if (!sessionActive) return;
-  
-  // Only run on YouTube watch pages
+  if (!sessionActive) {
+    removeColor(); // Use the new function to restore original colors
+    hideScoreDisplay();
+    return;
+  }
+
   if (!location.href.includes('youtube.com/watch')) return;
-  
+
   const m = location.href.match(/[?&]v=([^&]+)/);
   if (!m) return;
 
@@ -553,58 +580,59 @@ async function tryScore() {
   }
 
   lastVideoId = vid;
+  currentScore = null;
+  updateScoreDisplay('loading');
 
-  // Fetch and send videoId if sharing is enabled
-  chrome.storage.local.get(['shareHistoryEnabled'], prefs => {
-    if (prefs.shareHistoryEnabled) {
-      // Extract videoId from URL
-      const m = location.href.match(/[?&]v=([^&]+)/);
-      if (m && m[1]) {
-        chrome.runtime.sendMessage({ type: 'videoData', videoId: m[1] });
-      }
+  chrome.storage.local.get(['scoringType', 'simpleMode', 'advancedMode', 'goal'], prefs => {
+    const goal = prefs.goal || userGoal;
+    
+    // Handle new scoring mode structure
+    let scoringData = null;
+    if (prefs.scoringType === 'simple') {
+      scoringData = {
+        type: 'simple',
+        simpleMode: prefs.simpleMode || 'title_and_description'
+      };
+    } else if (prefs.scoringType === 'advanced') {
+      scoringData = {
+        type: 'advanced',
+        advancedMode: prefs.advancedMode || ['title', 'description']
+      };
+    } else {
+      // Legacy support for old scoreMode format
+      scoringData = prefs.scoreMode || ['title', 'description'];
     }
-  });
 
-  chrome.storage.local.get('scoreMode', prefs => {
-    const scoreMode = prefs.scoreMode || ['title', 'description'];
-    fetchScore(location.href, userGoal, scoreMode).then(response => {
+    fetchScore(location.href, goal, scoringData).then(response => {
       currentScore = response.score;
-      lastScores = response; // Store individual scores for feedback
+      lastScores = response;
       applyColor(currentScore);
-      
-      // Get video category from the response
-      console.log('Response from scoring API:', response);
-      const category = response.category_name || 'Video'; // Use actual category name or fallback
-      console.log('Using category:', category);
-      
-      // Update score display with category
-      updateScoreDisplay(currentScore, category);
+      updateScoreDisplay('success', { score: currentScore, category: response.category_name || 'Video' });
 
-      chrome.runtime.sendMessage({ type:'NEW_SCORE', score: currentScore });
+      chrome.runtime.sendMessage({ type: 'NEW_SCORE', score: currentScore });
 
       chrome.storage.local.get('watchedScores', d => {
-        const arr = d.watchedScores||[];
+        const arr = d.watchedScores || [];
         arr.push(currentScore);
-        chrome.storage.local.set({
-          watchedScores: arr,
-          lastVideoId,
-          currentScore
-        });
+        chrome.storage.local.set({ watchedScores: arr, lastVideoId, currentScore });
       });
+
     }).catch(e => {
-      const msg = e.message||'';
-      
-      // Handle different types of errors gracefully
-      if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-        console.log('[content.js] Scoring server not available - this is normal if the ML server is not running');
-        // Don't show error overlay for network issues, just log it
+      const msg = e.message || 'Scoring failed';
+      console.error('[content.js] scoring error:', e);
+
+      if (msg.includes('Extension context invalidated')) {
+        console.log('[TubeFocus] Context invalidated. Halting script on this page.');
+        clearInterval(timerId);
         return;
       }
-      
-      // Show error overlay for other types of errors
-      showErrorOverlay('Scoring error: ' + msg);
-      chrome.runtime.sendMessage({ type: 'ERROR', error: 'Scoring error: ' + msg });
-      console.error('[content.js] scoring error:', e);
+
+      removeColor(); // Use the new function on error as well
+      updateScoreDisplay('error', { message: msg });
+      showErrorOverlay(msg);
+      chrome.runtime.sendMessage({ type: 'ERROR', error: msg }, () => {
+        if (chrome.runtime.lastError) { /* do nothing */ }
+      });
     });
   });
 }

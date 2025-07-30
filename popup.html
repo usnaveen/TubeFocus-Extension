@@ -39,7 +39,7 @@
       
       <label for="scoreModeBtn">Scoring Mode:</label>
       <button id="scoreModeBtn" class="scoring-mode-btn">
-        <span id="scoreModeText">Title + Description</span>
+        <span id="scoreModeText">Simple: Title + Description</span>
         <span class="arrow">▼</span>
       </button>
       
@@ -119,40 +119,100 @@
         <button id="closeModal" class="close-modal">×</button>
       </div>
       <div class="modal-body">
-        <p class="modal-description">Choose which video elements to analyze for relevance to your goal:</p>
-        <div class="checkbox-group">
-          <label class="checkbox-item">
-            <input type="checkbox" id="titleCheck" checked>
-            <span class="checkmark"></span>
-            <div class="checkbox-text">
-              <span class="checkbox-label">Title</span>
-              <span class="checkbox-desc">Video title analysis</span>
-            </div>
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" id="descriptionCheck" checked>
-            <span class="checkmark"></span>
-            <div class="checkbox-text">
-              <span class="checkbox-label">Description</span>
-              <span class="checkbox-desc">Video description analysis</span>
-            </div>
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" id="tagsCheck">
-            <span class="checkmark"></span>
-            <div class="checkbox-text">
-              <span class="checkbox-label">Tags</span>
-              <span class="checkbox-desc">Video tags analysis</span>
-            </div>
-          </label>
-          <label class="checkbox-item">
-            <input type="checkbox" id="categoryCheck">
-            <span class="checkmark"></span>
-            <div class="checkbox-text">
-              <span class="checkbox-label">Category</span>
-              <span class="checkbox-desc">Video category analysis</span>
-            </div>
-          </label>
+        <p class="modal-description">Choose your scoring approach:</p>
+        
+        <!-- Scoring Type Selection -->
+        <div class="scoring-type-section">
+          <h4>Scoring Type</h4>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" id="simpleMode" name="scoringType" value="simple" checked>
+              <span class="radio-checkmark"></span>
+              <div class="radio-text">
+                <span class="radio-label">Simple</span>
+                <span class="radio-desc">Fast scoring with 3 modes</span>
+              </div>
+            </label>
+            <label class="radio-item">
+              <input type="radio" id="advancedMode" name="scoringType" value="advanced">
+              <span class="radio-checkmark"></span>
+              <div class="radio-text">
+                <span class="radio-label">Advanced</span>
+                <span class="radio-desc">Custom multi-factor analysis</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Simple Mode Options -->
+        <div id="simpleOptions" class="scoring-options-section">
+          <h4>Simple Mode Options</h4>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" id="titleOnly" name="simpleMode" value="title_only">
+              <span class="radio-checkmark"></span>
+              <div class="radio-text">
+                <span class="radio-label">Title Only</span>
+                <span class="radio-desc">Fastest scoring using only video title</span>
+              </div>
+            </label>
+            <label class="radio-item">
+              <input type="radio" id="titleDesc" name="simpleMode" value="title_and_description" checked>
+              <span class="radio-checkmark"></span>
+              <div class="radio-text">
+                <span class="radio-label">Title + Description</span>
+                <span class="radio-desc">Standard scoring with full description</span>
+              </div>
+            </label>
+            <label class="radio-item">
+              <input type="radio" id="titleCleanDesc" name="simpleMode" value="title_and_clean_desc">
+              <span class="radio-checkmark"></span>
+              <div class="radio-text">
+                <span class="radio-label">Title + Clean Description</span>
+                <span class="radio-desc">Smart filtering of description noise</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Advanced Mode Options -->
+        <div id="advancedOptions" class="scoring-options-section" style="display: none;">
+          <h4>Advanced Mode Options</h4>
+          <p class="advanced-description">Select 1-4 factors to analyze (minimum 1 required):</p>
+          <div class="checkbox-group">
+            <label class="checkbox-item">
+              <input type="checkbox" id="titleCheck" checked>
+              <span class="checkmark"></span>
+              <div class="checkbox-text">
+                <span class="checkbox-label">Title</span>
+                <span class="checkbox-desc">Video title analysis</span>
+              </div>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" id="descriptionCheck" checked>
+              <span class="checkmark"></span>
+              <div class="checkbox-text">
+                <span class="checkbox-label">Description</span>
+                <span class="checkbox-desc">Video description analysis</span>
+              </div>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" id="tagsCheck">
+              <span class="checkmark"></span>
+              <div class="checkbox-text">
+                <span class="checkbox-label">Tags</span>
+                <span class="checkbox-desc">Video tags analysis</span>
+              </div>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" id="categoryCheck">
+              <span class="checkmark"></span>
+              <div class="checkbox-text">
+                <span class="checkbox-label">Category</span>
+                <span class="checkbox-desc">Video category analysis</span>
+              </div>
+            </label>
+          </div>
         </div>
         <div class="modal-footer">
           <button id="applyScoringMode" class="apply-btn">Apply Selection</button>

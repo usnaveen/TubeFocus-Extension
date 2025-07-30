@@ -231,7 +231,7 @@ function updateUI(state) {
 }
 
 // --- Initialize UI & Listen for Changes ---
-chrome.storage.local.get(['sessionActive', 'goal', 'scoreMode', 'sessionEndTime', 'shareHistoryEnabled', 'selectedTheme'], (prefs) => {
+chrome.storage.local.get(['sessionActive', 'goal', 'scoringType', 'simpleMode', 'advancedMode', 'sessionEndTime', 'shareHistoryEnabled', 'selectedTheme'], (prefs) => {
   updateUI(prefs);
   shareHistoryToggle.checked = !!prefs.shareHistoryEnabled;
   
@@ -243,7 +243,7 @@ chrome.storage.local.get(['sessionActive', 'goal', 'scoreMode', 'sessionEndTime'
 
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local') {
-    chrome.storage.local.get(['sessionActive', 'goal', 'scoreMode', 'sessionEndTime'], updateUI);
+    chrome.storage.local.get(['sessionActive', 'goal', 'scoringType', 'simpleMode', 'advancedMode', 'sessionEndTime'], updateUI);
   }
 });
 
@@ -299,38 +299,90 @@ themeSelector.addEventListener('change', () => {
 });
 
 // --- Scoring Mode Modal Functionality ---
-let currentScoringMode = ['title', 'description']; // Default mode
+let currentScoringType = 'simple'; // 'simple' or 'advanced'
+let currentSimpleMode = 'title_and_description'; // 'title_only', 'title_and_description', 'title_and_clean_desc'
+let currentAdvancedMode = ['title', 'description']; // Array of selected features
 
 // Initialize scoring mode from storage
-chrome.storage.local.get('scoreMode', (data) => {
-  if (data.scoreMode) {
-    currentScoringMode = data.scoreMode;
+chrome.storage.local.get(['scoringType', 'simpleMode', 'advancedMode'], (data) => {
+  if (data.scoringType) {
+    currentScoringType = data.scoringType;
   }
-  updateScoringModeDisplay(); // Always update display
+  if (data.simpleMode) {
+    currentSimpleMode = data.simpleMode;
+  }
+  if (data.advancedMode) {
+    currentAdvancedMode = data.advancedMode;
+  }
+  updateScoringModeDisplay();
+  updateModalDisplay();
 });
 
 function updateScoringModeDisplay() {
-  const modeNames = {
-    'title': 'Title',
-    'description': 'Description', 
-    'tags': 'Tags',
-    'category': 'Category'
-  };
-  
-  // Ensure currentScoringMode is an array
-  if (!Array.isArray(currentScoringMode)) {
-    currentScoringMode = ['title', 'description']; // Default fallback
+  if (currentScoringType === 'simple') {
+    const modeNames = {
+      'title_only': 'Title Only',
+      'title_and_description': 'Title + Description',
+      'title_and_clean_desc': 'Title + Clean Description'
+    };
+    scoreModeText.textContent = `Simple: ${modeNames[currentSimpleMode]}`;
+  } else {
+    const modeNames = {
+      'title': 'Title',
+      'description': 'Description', 
+      'tags': 'Tags',
+      'category': 'Category'
+    };
+    
+    // Ensure currentAdvancedMode is an array
+    if (!Array.isArray(currentAdvancedMode)) {
+      currentAdvancedMode = ['title', 'description']; // Default fallback
+    }
+    
+    const selectedNames = currentAdvancedMode.map(mode => modeNames[mode]);
+    const displayText = selectedNames.length > 0 ? selectedNames.join(' + ') : 'None selected';
+    scoreModeText.textContent = `Advanced: ${displayText}`;
+  }
+}
+
+function updateModalDisplay() {
+  // Update radio buttons for scoring type
+  const simpleTypeRadio = document.getElementById('simpleMode');
+  const advancedTypeRadio = document.getElementById('advancedMode');
+  if (simpleTypeRadio && advancedTypeRadio) {
+    simpleTypeRadio.checked = currentScoringType === 'simple';
+    advancedTypeRadio.checked = currentScoringType === 'advanced';
   }
   
-  const selectedNames = currentScoringMode.map(mode => modeNames[mode]);
-  const displayText = selectedNames.length > 0 ? selectedNames.join(' + ') : 'None selected';
-  scoreModeText.textContent = displayText;
+  // Show/hide appropriate sections
+  const simpleOptions = document.getElementById('simpleOptions');
+  const advancedOptions = document.getElementById('advancedOptions');
+  if (simpleOptions && advancedOptions) {
+    simpleOptions.style.display = currentScoringType === 'simple' ? 'block' : 'none';
+    advancedOptions.style.display = currentScoringType === 'advanced' ? 'block' : 'none';
+  }
   
-  // Update checkboxes
-  titleCheck.checked = currentScoringMode.includes('title');
-  descriptionCheck.checked = currentScoringMode.includes('description');
-  tagsCheck.checked = currentScoringMode.includes('tags');
-  categoryCheck.checked = currentScoringMode.includes('category');
+  // Update simple mode radio buttons
+  const titleOnlyRadio = document.getElementById('titleOnly');
+  const titleDescRadio = document.getElementById('titleDesc');
+  const titleCleanDescRadio = document.getElementById('titleCleanDesc');
+  if (titleOnlyRadio && titleDescRadio && titleCleanDescRadio) {
+    titleOnlyRadio.checked = currentSimpleMode === 'title_only';
+    titleDescRadio.checked = currentSimpleMode === 'title_and_description';
+    titleCleanDescRadio.checked = currentSimpleMode === 'title_and_clean_desc';
+  }
+  
+  // Update advanced mode checkboxes
+  const titleCheck = document.getElementById('titleCheck');
+  const descriptionCheck = document.getElementById('descriptionCheck');
+  const tagsCheck = document.getElementById('tagsCheck');
+  const categoryCheck = document.getElementById('categoryCheck');
+  if (titleCheck && descriptionCheck && tagsCheck && categoryCheck) {
+    titleCheck.checked = currentAdvancedMode.includes('title');
+    descriptionCheck.checked = currentAdvancedMode.includes('description');
+    tagsCheck.checked = currentAdvancedMode.includes('tags');
+    categoryCheck.checked = currentAdvancedMode.includes('category');
+  }
 }
 
 // Open modal
@@ -350,25 +402,72 @@ scoringModeModal.addEventListener('click', (e) => {
   }
 });
 
+// Add event listeners for scoring type radio buttons
+document.addEventListener('DOMContentLoaded', () => {
+  const simpleTypeRadio = document.getElementById('simpleMode');
+  const advancedTypeRadio = document.getElementById('advancedMode');
+  
+  if (simpleTypeRadio && advancedTypeRadio) {
+    simpleTypeRadio.addEventListener('change', () => {
+      currentScoringType = 'simple';
+      updateModalDisplay();
+    });
+    
+    advancedTypeRadio.addEventListener('change', () => {
+      currentScoringType = 'advanced';
+      updateModalDisplay();
+    });
+  }
+});
+
 // Apply scoring mode
 applyScoringMode.addEventListener('click', () => {
-  const newMode = [];
-  if (titleCheck.checked) newMode.push('title');
-  if (descriptionCheck.checked) newMode.push('description');
-  if (tagsCheck.checked) newMode.push('tags');
-  if (categoryCheck.checked) newMode.push('category');
-  
-  // Ensure at least one option is selected
-  if (newMode.length === 0) {
-    newMode.push('title'); // Default to title only
-    titleCheck.checked = true;
+  if (currentScoringType === 'simple') {
+    // Get selected simple mode
+    const titleOnlyRadio = document.getElementById('titleOnly');
+    const titleDescRadio = document.getElementById('titleDesc');
+    const titleCleanDescRadio = document.getElementById('titleCleanDesc');
+    
+    if (titleOnlyRadio && titleOnlyRadio.checked) {
+      currentSimpleMode = 'title_only';
+    } else if (titleDescRadio && titleDescRadio.checked) {
+      currentSimpleMode = 'title_and_description';
+    } else if (titleCleanDescRadio && titleCleanDescRadio.checked) {
+      currentSimpleMode = 'title_and_clean_desc';
+    } else {
+      // Default fallback
+      currentSimpleMode = 'title_and_description';
+    }
+  } else {
+    // Advanced mode - get selected checkboxes
+    const newMode = [];
+    const titleCheck = document.getElementById('titleCheck');
+    const descriptionCheck = document.getElementById('descriptionCheck');
+    const tagsCheck = document.getElementById('tagsCheck');
+    const categoryCheck = document.getElementById('categoryCheck');
+    
+    if (titleCheck && titleCheck.checked) newMode.push('title');
+    if (descriptionCheck && descriptionCheck.checked) newMode.push('description');
+    if (tagsCheck && tagsCheck.checked) newMode.push('tags');
+    if (categoryCheck && categoryCheck.checked) newMode.push('category');
+    
+    // Ensure at least one option is selected
+    if (newMode.length === 0) {
+      newMode.push('title'); // Default to title only
+      if (titleCheck) titleCheck.checked = true;
+    }
+    
+    currentAdvancedMode = newMode;
   }
   
-  currentScoringMode = newMode;
   updateScoringModeDisplay();
   
   // Save to storage
-  chrome.storage.local.set({ scoreMode: currentScoringMode });
+  chrome.storage.local.set({ 
+    scoringType: currentScoringType,
+    simpleMode: currentSimpleMode,
+    advancedMode: currentAdvancedMode
+  });
   
   // Close modal
   scoringModeModal.classList.remove('active');
@@ -376,7 +475,12 @@ applyScoringMode.addEventListener('click', () => {
   // Update active session if running
   chrome.storage.local.get('sessionActive', prefs => {
     if (prefs.sessionActive) {
-      sendToContent({ type: 'SCORE_MODE_CHANGED', mode: currentScoringMode });
+      const modeData = {
+        type: currentScoringType,
+        simpleMode: currentSimpleMode,
+        advancedMode: currentAdvancedMode
+      };
+      sendToContent({ type: 'SCORE_MODE_CHANGED', mode: modeData });
       scoreDisplay.textContent = 'Scoring mode changed. Score updating...';
       scoreDisplay.classList.remove('error');
       setTimeout(() => {
@@ -420,31 +524,40 @@ startBtn.addEventListener('click', () => {
   const duration = parseInt(sessionDurationInput.value, 10);
   if (!goal || !duration || duration < 1) return;
 
-  chrome.runtime.sendMessage({ type: 'START_SESSION', duration, goal, scoreMode: currentScoringMode });
+  // Handle new scoring mode structure
+  let scoringData = null;
+  if (currentScoringType === 'simple') {
+    scoringData = {
+      scoringType: 'simple',
+      simpleMode: currentSimpleMode
+    };
+  } else {
+    scoringData = {
+      scoringType: 'advanced',
+      advancedMode: currentAdvancedMode
+    };
+  }
+
+  chrome.runtime.sendMessage({ 
+    type: 'START_SESSION', 
+    duration, 
+    goal, 
+    ...scoringData 
+  });
   
   // Send message to content.js to start session
   sendToContent({ type: 'START_SESSION', goal });
 });
 
 // --- Stop Session ---
-function reloadTabWithTimestamp() {
-  chrome.runtime.sendMessage({ type: 'RELOAD_WITH_TIMESTAMP' });
-}
-
 stopBtn.addEventListener('click', () => {
-  reloadTabWithTimestamp();
+  // The background script now handles all stop logic, including the reload.
   chrome.runtime.sendMessage({ type: 'STOP_SESSION' });
-  
-  // Send message to content.js to stop session
-  sendToContent({ type: 'STOP_SESSION' });
 });
 
 toggleOffBtn.addEventListener('click', () => {
-  reloadTabWithTimestamp();
+  // The background script now handles all stop logic, including the reload.
   chrome.runtime.sendMessage({ type: 'STOP_SESSION' });
-  
-  // Send message to content.js to stop session
-  sendToContent({ type: 'STOP_SESSION' });
 });
 
 // --- Live “Current” score updates from content.js ---

@@ -31,11 +31,29 @@ MANIFEST
 # Instance Folder
 instance/
 
-# Ignore image assets
+# Ignore image assets (but keep required icons)
 icons/
 *.svg
 *.png
+!icons/icon16.png
+!icons/icon48.png
+!icons/icon128.png
+!Settings.svg
 
 # Ignore documentation and reload instructions
 RELOAD_INSTRUCTIONS.md
 FEEDBACK_UI_UPDATE.md
+
+# Ignore unnecessary files
+.DS_Store
+*.zip
+screenshot.html
+screenshot.js
+test_extension.html
+screenshot of ui.png
+error.jpg
+Left Arrow Return Icon.svg
+libs/html2canvas.min.js
+
+# Ignore development files
+.cursor/

@@ -3,7 +3,7 @@ console.log('[background] service worker started');
 
 // Configuration - will be updated for production
 const CONFIG = {
-  API_BASE_URL: 'http://localhost:8080', // Change to Cloud Run URL when deployed
+  API_BASE_URL: 'https://yt-scorer-api-49646986060.us-central1.run.app', // Change to Cloud Run URL when deployed
   API_KEY: 'changeme'
 };
 
@@ -77,38 +77,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } else
   if (msg.type === 'START_SESSION') {
     const endTime = Date.now() + msg.duration * 60 * 1000;
-    chrome.storage.local.set({ sessionActive: true, sessionEndTime: endTime, goal: msg.goal, scoreMode: msg.scoreMode, watchedScores: [] }, () => {
+    
+    // Handle new scoring mode structure
+    const storageData = { 
+      sessionActive: true, 
+      sessionEndTime: endTime, 
+      goal: msg.goal, 
+      watchedScores: [] 
+    };
+    
+    if (msg.scoringType === 'simple') {
+      storageData.scoringType = 'simple';
+      storageData.simpleMode = msg.simpleMode || 'title_and_description';
+    } else if (msg.scoringType === 'advanced') {
+      storageData.scoringType = 'advanced';
+      storageData.advancedMode = msg.advancedMode || ['title', 'description'];
+    } else {
+      // Legacy support for old scoreMode format
+      storageData.scoreMode = msg.scoreMode || ['title', 'description'];
+    }
+    
+    chrome.storage.local.set(storageData, () => {
       chrome.alarms.create('sessionEnd', { delayInMinutes: msg.duration });
     });
     sessionVideos = [];
   } else if (msg.type === 'STOP_SESSION') {
-    chrome.storage.local.get(['sessionActive', 'goal', 'shareHistoryEnabled'], prefs => {
-      if (prefs.sessionActive && prefs.shareHistoryEnabled && sessionVideos.length > 0) {
-        fetch(`${CONFIG.API_BASE_URL}/upload`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'X-API-KEY': CONFIG.API_KEY
-          },
-          body: JSON.stringify({
-            goal: prefs.goal,
-            session: sessionVideos
-          })
-        }).then(() => {
-          sessionVideos = [];
-        }).catch(() => {
-          sessionVideos = [];
-        });
-      } else {
-        sessionVideos = [];
-      }
-    });
-    chrome.storage.local.set({ sessionActive: false, sessionEndTime: null }, () => {
+    chrome.storage.local.set({ sessionActive: false, sessionEndTime: null, watchedScores: [] }, () => {
       chrome.alarms.clear('sessionEnd');
+      console.log('[background] Session stopped and data cleared.');
+
+      // Reload the active tab to apply the stopped state
+      chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+        if (tabs[0] && tabs[0].id) {
+          chrome.tabs.reload(tabs[0].id);
+        }
+      });
     });
   } else if (msg.type === 'videoData') {
     // msg: { videoId }
-    chrome.storage.local.get(['sessionActive', 'shareHistoryEnabled', 'goal', 'scoreMode'], async prefs => {
+    chrome.storage.local.get(['sessionActive', 'shareHistoryEnabled', 'goal', 'scoringType', 'simpleMode', 'advancedMode'], async prefs => {
       if (prefs.sessionActive && prefs.shareHistoryEnabled) {
         const meta = await fetchVideoMetadata(msg.videoId);
         let category = '';
@@ -118,17 +125,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // Call backend to get score
         let score = null;
         try {
-          const res = await fetch(`${CONFIG.API_BASE_URL}/predict`, {
+          // Determine which endpoint to use based on scoring type
+          let endpoint = `${CONFIG.API_BASE_URL}/predict`;
+          let requestBody = {
+            video_id: msg.videoId,
+            goal: prefs.goal
+          };
+          
+          if (prefs.scoringType === 'simple') {
+            // Use the new simple endpoint
+            endpoint = `${CONFIG.API_BASE_URL}/simpletitledesc`;
+            requestBody = {
+              video_url: `https://www.youtube.com/watch?v=${msg.videoId}`,
+              goal: prefs.goal,
+              mode: prefs.simpleMode || 'title_and_description'
+            };
+          } else {
+            // Use the advanced endpoint
+            requestBody.parameters = Array.isArray(prefs.advancedMode) ? prefs.advancedMode : ['title', 'description', 'tags', 'category'];
+          }
+          
+          const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
               'X-API-KEY': CONFIG.API_KEY
             },
-            body: JSON.stringify({
-              video_id: msg.videoId,
-              goal: prefs.goal,
-              parameters: Array.isArray(prefs.scoreMode) ? prefs.scoreMode : ['title', 'description', 'tags', 'category']
-            })
+            body: JSON.stringify(requestBody)
           });
           const data = await res.json();
           score = data.score || data;
@@ -156,17 +179,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
   } else if (msg.type === 'FETCH_SCORE') {
     console.log('[background] FETCH_SCORE request', msg);
-    fetch(API_ENDPOINT, {
+    
+    // Determine which endpoint to use based on scoring type
+    let endpoint = API_ENDPOINT;
+    let requestBody = {
+      video_id: msg.url.match(/[?&]v=([^&]+)/)?.[1] || '',
+      goal: msg.goal
+    };
+    
+    if (msg.scoringType === 'simple') {
+      // Use the new simple endpoint
+      endpoint = `${CONFIG.API_BASE_URL}/simpletitledesc`;
+      requestBody = {
+        video_url: msg.url,
+        goal: msg.goal,
+        mode: msg.simpleMode || 'title_and_description'
+      };
+    } else {
+      // Use the advanced endpoint
+      requestBody.parameters = Array.isArray(msg.advancedMode) ? msg.advancedMode : ['title', 'description', 'tags', 'category'];
+    }
+    
+    fetch(endpoint, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         'X-API-KEY': CONFIG.API_KEY
       },
-      body: JSON.stringify({
-        video_id: msg.url.match(/[?&]v=([^&]+)/)?.[1] || '',
-        goal: msg.goal,
-        parameters: Array.isArray(msg.scoreMode) ? msg.scoreMode : ['title', 'description', 'tags', 'category']
-      })
+      body: JSON.stringify(requestBody)
     })
     .then(res => res.json())
     .then(data => {
@@ -178,25 +218,5 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ error: err.message });
     });
     return true; // Keep the message channel open for sendResponse
-  } else if (msg.type === 'RELOAD_WITH_TIMESTAMP') {
-    chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-      if (tabs[0]) {
-        chrome.scripting.executeScript({
-          target: { tabId: tabs[0].id },
-          func: function() {
-            try {
-              const video = document.querySelector('video');
-              let t = 0;
-              if (video) t = Math.floor(video.currentTime);
-              let url = new URL(window.location.href);
-              url.searchParams.set('t', t);
-              window.location.replace(url.toString());
-            } catch (e) {
-              window.location.reload();
-            }
-          }
-        });
-      }
-    });
-  }
+  } 
 });

@@ -5,9 +5,15 @@ TubeFocus is a Chrome extension that helps you stay focused and productive while
 
 ## Features
 - **Session Goals:** Set a clear goal before starting a session (e.g., "Studying Calculus").
-- **Dual-Mode Scoring:**
-  - *Title & Description*: Analyzes both the video title and description for relevance using advanced ML models.
-  - *Title Only*: Faster, lighter check using just the title.
+- **Dual Scoring System:**
+  - **Simple Scoring**: Fast and reliable scoring using 5 sentence transformers with 3 modes:
+    - *Title Only*: Fastest scoring using only video title
+    - *Title + Description*: Standard scoring with full description
+    - *Title + Clean Description*: Smart filtering of description noise
+  - **Advanced Scoring**: Multi-factor analysis with customizable features:
+    - *Customizable Selection*: Choose 1-4 factors (Title, Description, Tags, Category)
+    - *Minimum 1 Required*: Ensures at least one factor is selected
+    - *Maximum All*: Can select all 4 factors for comprehensive analysis
 - **Advanced ML Scoring:** Uses ensemble of sentence transformers and zero-shot classification models for accurate relevance scoring.
 - **Visual Feedback:** The extension overlays a color gradient on YouTube:
   - Green = highly relevant
@@ -35,10 +41,12 @@ The project includes two backend implementations:
 
 #### 1. Development Container
 Located in `YouTube Productivity Score Development Container/`
+- **Dual Scoring System**: Both Simple and Advanced scoring approaches
+- **Simple Scoring**: 5 sentence transformers with 3 modes (title_only, title_and_description, title_and_clean_desc)
 - **Advanced ML Models**: Ensemble of sentence transformers and zero-shot classification
 - **Model Training**: MLP regressor for personalized scoring
 - **Multiple Scoring Modules**: Title, description, tags, and category analysis
-- **API Endpoints**: `/predict` and `/upload` for scoring and summaries
+- **API Endpoints**: `/simpletitledesc`, `/predict`, and `/upload` for scoring and summaries
 
 #### 2. Docker Container
 Located in `YouTube Productivity Score Docker Container/`
@@ -102,13 +110,23 @@ Set the following environment variables:
 
 ## API Endpoints
 
-### `/predict` (POST)
-Score a YouTube video for relevance to a user goal.
+### `/simpletitledesc` (POST) - Simple Scoring
+Score a YouTube video using the simplified scoring system with 5 sentence transformers.
 ```json
 {
   "video_url": "https://www.youtube.com/watch?v=...",
   "goal": "learn about music videos",
-  "mode": "title_and_description"
+  "mode": "title_only" | "title_and_description" | "title_and_clean_desc"
+}
+```
+
+### `/predict` (POST) - Advanced Scoring
+Score a YouTube video for relevance to a user goal using multi-factor analysis.
+```json
+{
+  "video_id": "...",
+  "goal": "learn about music videos",
+  "parameters": ["title", "description", "tags", "category"]
 }
 ```
 

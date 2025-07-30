@@ -1,7 +1,7 @@
 // Configuration for TubeFocus Extension
 const CONFIG = {
   // API Configuration
-  API_BASE_URL: 'http://localhost:8080', // Change this to your Cloud Run URL when deployed
+  API_BASE_URL: 'https://yt-scorer-api-49646986060.us-central1.run.app', // Change this to your Cloud Run URL when deployed
   API_KEY: 'changeme',
   
   // Feature flags
