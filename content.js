@@ -1,5 +1,6 @@
 // content.js
-console.log('[content.js] injected');
+console.log('[content.js] injected - LOCAL DEVELOPMENT MODE');
+console.log('[content.js] API Base URL:', 'http://localhost:8080');
 
 let sessionActive = false;
 let userGoal      = '';

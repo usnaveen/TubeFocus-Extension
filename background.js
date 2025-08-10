@@ -1,22 +1,35 @@
 // background.js
-console.log('[background] service worker started');
+console.log('[background] service worker started - LOCAL DEVELOPMENT MODE');
+console.log('[background] API Base URL:', 'http://localhost:8080');
+console.log('[background] Available endpoints: /score/detailed, /score/simple, /feedback, /health');
 
-// Configuration - will be updated for production
+// Configuration - LOCAL DEVELOPMENT
 const CONFIG = {
-  API_BASE_URL: 'https://yt-scorer-api-49646986060.us-central1.run.app', // Change to Cloud Run URL when deployed
+  API_BASE_URL: 'http://localhost:8080', // Local dev container
   API_KEY: 'changeme'
 };
 
-const API_ENDPOINT = `${CONFIG.API_BASE_URL}/predict`;
+const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;
 
 // --- Alarms for session management ---
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === 'sessionEnd') {
-    chrome.storage.local.get('sessionEndTime', data => {
+    chrome.storage.local.get(['sessionEndTime', 'shareHistoryEnabled', 'goal'], data => {
       if (Date.now() >= data.sessionEndTime) {
         // End the session
         chrome.storage.local.set({ sessionActive: false, sessionEndTime: null }, () => {
-          chrome.runtime.sendMessage({ type: 'SHOW_SUMMARY' });
+          // Upload session data if sharing is enabled
+          if (data.shareHistoryEnabled && sessionVideos.length > 0) {
+            console.log('[background] LOCAL DEV: Session data upload disabled - /upload endpoint not available in dev container');
+            console.log('[background] Session data would contain:', sessionVideos.length, 'videos');
+            // For local development, just clear the session videos and show summary
+            sessionVideos = [];
+            chrome.runtime.sendMessage({ type: 'SHOW_SUMMARY' });
+          } else {
+            // No data to upload or sharing disabled, just show summary
+            chrome.runtime.sendMessage({ type: 'SHOW_SUMMARY' });
+          }
+          
           // Send message to all tabs to refresh
           chrome.tabs.query({}, (tabs) => {
             tabs.forEach(tab => {
@@ -38,6 +51,20 @@ let sessionVideos = [];
 
 // --- YouTube API helpers ---
 const YT_API_KEY = 'YOUR_YOUTUBE_API_KEY'; // TODO: Replace with your key or load from storage
+
+// --- Session data upload helper ---
+async function uploadSessionData(goal, videos) {
+  if (!videos || videos.length === 0) {
+    console.log('[background] No videos to upload');
+    return null;
+  }
+  
+  console.log('[background] LOCAL DEV: Session data upload disabled - /upload endpoint not available in dev container');
+  console.log('[background] Would upload session data for goal:', goal, 'with', videos.length, 'videos');
+  
+  // For local development, return mock success
+  return { status: 'LOCAL_DEV_MODE', message: 'Upload simulated for local development' };
+}
 
 async function fetchVideoMetadata(videoId) {
   const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${YT_API_KEY}`;
@@ -102,9 +129,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     sessionVideos = [];
   } else if (msg.type === 'STOP_SESSION') {
+    // Clear session data without uploading when manually stopped
     chrome.storage.local.set({ sessionActive: false, sessionEndTime: null, watchedScores: [] }, () => {
       chrome.alarms.clear('sessionEnd');
       console.log('[background] Session stopped and data cleared.');
+      // Reset session videos array
+      sessionVideos = [];
 
       // Reload the active tab to apply the stopped state
       chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
@@ -126,7 +156,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         let score = null;
         try {
           // Determine which endpoint to use based on scoring type
-          let endpoint = `${CONFIG.API_BASE_URL}/predict`;
+          let endpoint = `${CONFIG.API_BASE_URL}/score/detailed`;
           let requestBody = {
             video_id: msg.videoId,
             goal: prefs.goal
@@ -134,7 +164,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           
           if (prefs.scoringType === 'simple') {
             // Use the new simple endpoint
-            endpoint = `${CONFIG.API_BASE_URL}/simpletitledesc`;
+            endpoint = `${CONFIG.API_BASE_URL}/score/simple`;
             requestBody = {
               video_url: `https://www.youtube.com/watch?v=${msg.videoId}`,
               goal: prefs.goal,
@@ -145,6 +175,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             requestBody.parameters = Array.isArray(prefs.advancedMode) ? prefs.advancedMode : ['title', 'description', 'tags', 'category'];
           }
           
+          console.log('[background] LOCAL DEV: Making API call to:', endpoint);
+          console.log('[background] Request body:', requestBody);
+          
           const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 
@@ -153,11 +186,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             },
             body: JSON.stringify(requestBody)
           });
+          
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+          }
+          
           const data = await res.json();
           score = data.score || data;
+          console.log('[background] LOCAL DEV: API response:', data);
         } catch (e) {
+          console.error('[background] LOCAL DEV: API call failed:', e);
+          console.log('[background] LOCAL DEV: Make sure the dev container is running on localhost:8080');
           score = null;
         }
+        
         sessionVideos.push({
           videoId: msg.videoId,
           title: meta ? meta.title : '',
@@ -189,7 +231,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     
     if (msg.scoringType === 'simple') {
       // Use the new simple endpoint
-      endpoint = `${CONFIG.API_BASE_URL}/simpletitledesc`;
+      endpoint = `${CONFIG.API_BASE_URL}/score/simple`;
       requestBody = {
         video_url: msg.url,
         goal: msg.goal,
@@ -200,6 +242,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       requestBody.parameters = Array.isArray(msg.advancedMode) ? msg.advancedMode : ['title', 'description', 'tags', 'category'];
     }
     
+    console.log('[background] LOCAL DEV: FETCH_SCORE API call to:', endpoint);
+    console.log('[background] LOCAL DEV: Request body:', requestBody);
+    
     fetch(endpoint, {
       method: 'POST',
       headers: { 
@@ -208,13 +253,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       },
       body: JSON.stringify(requestBody)
     })
-    .then(res => res.json())
+    .then(res => {
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    })
     .then(data => {
-      console.log('[background] FETCH_SCORE response', data);
+      console.log('[background] LOCAL DEV: FETCH_SCORE response:', data);
       sendResponse(data);
     })
     .catch(err => {
-      console.error('[background] FETCH_SCORE error', err);
+      console.error('[background] LOCAL DEV: FETCH_SCORE error:', err);
+      console.log('[background] LOCAL DEV: Make sure the dev container is running on localhost:8080');
       sendResponse({ error: err.message });
     });
     return true; // Keep the message channel open for sendResponse
