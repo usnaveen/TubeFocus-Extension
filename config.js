@@ -1,20 +1,20 @@
-// Configuration for TubeFocus Extension - LOCAL DEVELOPMENT MODE
+// Configuration for TubeFocus Extension - PRODUCTION MODE
 const CONFIG = {
-  // API Configuration - LOCAL DEVELOPMENT
-  API_BASE_URL: 'http://localhost:8080', // Local dev container
-  API_KEY: 'changeme',
-  
+  // API Configuration - PRODUCTION
+  API_BASE_URL: 'https://simplescore-49646986060.asia-south2.run.app',
+  API_KEY: 'test_key',
+
   // Feature flags
   ENABLE_FEEDBACK: true,
   ENABLE_SESSION_HISTORY: true,
-  
+
   // UI Configuration
   SCORE_UPDATE_INTERVAL: 1000, // milliseconds
   FEEDBACK_TOAST_DURATION: 2000, // milliseconds
-  
+
   // Development mode
   DEBUG_MODE: true,
-  
+
   // Local development settings
   LOCAL_DEV: true,
   LOG_API_CALLS: true

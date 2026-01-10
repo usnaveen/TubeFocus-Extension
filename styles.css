@@ -659,6 +659,12 @@ footer span {
   transform: scale(0.95);
 }
 
+/* Dropdown Container */
+.dropdown-container {
+  position: relative;
+  width: 100%;
+}
+
 /* Scoring Mode Button */
 .scoring-mode-btn {
   width: 100%;
@@ -691,282 +697,87 @@ footer span {
   transform: translateY(1px);
 }
 
-/* Modal Overlay */
-.modal-overlay {
-  position: fixed;
-  top: 0;
+.dropdown-container.open .scoring-mode-btn .arrow {
+  transform: rotate(180deg);
+}
+
+/* Dropdown Menu */
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
   left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.7);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-  padding: 10px;
-}
-
-.modal-overlay.active {
-  display: flex;
-}
-
-.modal-content {
-  background: var(--bg);
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  width: 95%;
-  max-width: 280px;
-  max-height: 70vh;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  margin: auto;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem;
+  right: 0;
   background: var(--panel);
-  border-bottom: 1px solid var(--highlight);
+  border: 1px solid var(--highlight);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  z-index: 1000;
+  max-height: 300px;
+  overflow-y: auto;
+  display: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-.modal-header h3 {
-  margin: 0;
-  color: var(--accent);
-  font-family: var(--font);
-  font-size: 14px;
+.dropdown-menu.show {
+  display: block;
 }
 
-.close-modal {
-  background: none;
-  border: none;
-  color: var(--text);
-  font-size: 20px;
-  cursor: pointer;
-  padding: 0;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  transition: background 0.2s ease;
+.dropdown-section {
+  padding: 0.5rem 0;
 }
 
-.close-modal:hover {
-  background: var(--highlight);
+.dropdown-section:not(:last-child) {
+  border-bottom: 1px solid var(--border);
 }
 
-.modal-body {
-  padding: 0.6rem;
-}
-
-.modal-description {
-  margin: 0 0 0.6rem 0;
-  color: var(--text);
+.dropdown-header {
+  padding: 0.3rem 0.8rem;
   font-size: 11px;
-  line-height: 1.2;
-}
-
-.checkbox-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-bottom: 0.8rem;
-}
-
-.checkbox-item {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  padding: 0.3rem;
-  border-radius: 6px;
-  transition: background 0.2s ease;
-}
-
-.checkbox-item:hover {
-  background: var(--panel);
-}
-
-.checkbox-item input[type="checkbox"] {
-  display: none;
-}
-
-.checkmark {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--highlight);
-  border-radius: 4px;
-  margin-right: 0.6rem;
-  position: relative;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.checkbox-item input[type="checkbox"]:checked + .checkmark {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.checkbox-item input[type="checkbox"]:checked + .checkmark::after {
-  content: '✓';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: var(--bg);
-  font-size: 12px;
   font-weight: bold;
-}
-
-.checkbox-text {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.checkbox-label {
-  font-weight: bold;
-  color: var(--text);
-  font-size: 12px;
-  margin-bottom: 0.1rem;
-}
-
-.checkbox-desc {
-  color: #aaa;
-  font-size: 10px;
-  line-height: 1.1;
-}
-
-/* Radio button styles */
-.radio-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.radio-item {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: var(--panel);
-  border: 1px solid var(--border);
-}
-
-.radio-item:hover {
-  background: var(--highlight);
-  border-color: var(--accent);
-}
-
-.radio-item input[type="radio"] {
-  display: none;
-}
-
-.radio-checkmark {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--border);
-  border-radius: 50%;
-  margin-right: 0.6rem;
-  position: relative;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.radio-item input[type="radio"]:checked + .radio-checkmark {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.radio-item input[type="radio"]:checked + .radio-checkmark::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 6px;
-  height: 6px;
-  background: var(--bg);
-  border-radius: 50%;
-}
-
-.radio-text {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.radio-label {
-  font-weight: bold;
-  color: var(--text);
-  font-size: 12px;
-  margin-bottom: 0.1rem;
-}
-
-.radio-desc {
-  color: #aaa;
-  font-size: 10px;
-  line-height: 1.1;
-}
-
-/* Scoring sections */
-.scoring-type-section,
-.scoring-options-section {
-  margin-bottom: 1.5rem;
-  padding: 0.8rem;
-  background: var(--bg);
-  border-radius: 6px;
-  border: 1px solid var(--border);
-}
-
-.scoring-type-section h4,
-.scoring-options-section h4 {
-  margin: 0 0 0.8rem 0;
   color: var(--accent);
-  font-size: 13px;
-  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.3rem;
 }
 
-.advanced-description {
-  color: #aaa;
+.dropdown-option {
+  padding: 0.5rem 0.8rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.dropdown-option:hover {
+  background: var(--highlight);
+}
+
+.dropdown-option.selected {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.dropdown-option.selected .option-desc {
+  color: var(--bg);
+  opacity: 0.8;
+}
+
+.option-label {
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--text);
+}
+
+.option-desc {
   font-size: 10px;
-  margin-bottom: 0.8rem;
+  color: #aaa;
   line-height: 1.2;
 }
 
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 0.6rem;
-  border-top: 1px solid var(--highlight);
-}
 
-.apply-btn {
-  background: var(--accent);
-  color: var(--bg);
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: var(--font);
-  font-size: 12px;
-  font-weight: bold;
-  transition: all 0.2s ease;
-}
-
-.apply-btn:hover {
-  background: #d88a6e;
-  transform: translateY(-1px);
-}
-
-.apply-btn:active {
-  transform: translateY(0);
-}
 
 .settings-header {
   display: flex;
@@ -1054,7 +865,7 @@ footer {
   border-bottom: 2px solid var(--border);
 }
 [data-theme="golden-ocean"] .tabs button.active {
-  background: #1d352;
+  background: #1d352f;
   color: #efc142;
   border-bottom: 2px solid #0d1a13;
 }
@@ -1070,100 +881,3 @@ footer {
   bottom: -0.2em;
 }
 
-/* Radio button styles */
-.radio-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.radio-item {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: var(--panel);
-  border: 1px solid var(--border);
-}
-
-.radio-item:hover {
-  background: var(--highlight);
-  border-color: var(--accent);
-}
-
-.radio-item input[type="radio"] {
-  display: none;
-}
-
-.radio-checkmark {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--border);
-  border-radius: 50%;
-  margin-right: 0.6rem;
-  position: relative;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.radio-item input[type="radio"]:checked + .radio-checkmark {
-  border-color: var(--accent);
-  background: var(--accent);
-}
-
-.radio-item input[type="radio"]:checked + .radio-checkmark::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 6px;
-  height: 6px;
-  background: var(--bg);
-  border-radius: 50%;
-}
-
-.radio-text {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.radio-label {
-  font-weight: 500;
-  color: var(--text);
-  margin-bottom: 0.2rem;
-}
-
-.radio-desc {
-  color: #aaa;
-  font-size: 10px;
-  line-height: 1.1;
-}
-
-.scoring-type-section,
-.advanced-section {
-  margin-bottom: 1.5rem;
-  padding: 1rem;
-  border-radius: 8px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-}
-
-.scoring-type-section h4,
-.advanced-section h4 {
-  margin: 0 0 0.5rem 0;
-  color: var(--accent);
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.advanced-description {
-  color: #aaa;
-  font-size: 0.8rem;
-  margin-bottom: 1rem;
-  line-height: 1.3;
-}

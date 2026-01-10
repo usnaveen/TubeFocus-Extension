@@ -3,11 +3,11 @@ console.log('[background] service worker started - LOCAL DEVELOPMENT MODE');
 console.log('[background] API Base URL:', 'http://localhost:8080');
 console.log('[background] Available endpoints: /score/detailed, /score/simple, /score/simple/fast, /feedback, /health');
 
-// Configuration - LOCAL DEVELOPMENT
+// Configuration - PRODUCTION
 const CONFIG = {
-  API_BASE_URL: 'http://localhost:8080', // Local dev container
-  API_KEY: 'changeme'
-  // Note: Local models removed. Using Gemini API via /score/simple
+  API_BASE_URL: 'https://simplescore-49646986060.asia-south2.run.app',
+  API_KEY: 'test_key'
+  // Note: Using Cloud Function (Gen 2) via /simple_score (mapped to root or explicit path)
 };
 
 const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;
@@ -49,45 +49,6 @@ chrome.alarms.onAlarm.addListener(alarm => {
 });
 
 let sessionVideos = [];
-
-// --- YouTube API helpers ---
-const YT_API_KEY = 'YOUR_YOUTUBE_API_KEY'; // TODO: Replace with your key or load from storage
-
-// --- Session data upload helper ---
-async function uploadSessionData(goal, videos) {
-  if (!videos || videos.length === 0) {
-    console.log('[background] No videos to upload');
-    return null;
-  }
-
-  console.log('[background] LOCAL DEV: Session data upload disabled - /upload endpoint not available in dev container');
-  console.log('[background] Would upload session data for goal:', goal, 'with', videos.length, 'videos');
-
-  // For local development, return mock success
-  return { status: 'LOCAL_DEV_MODE', message: 'Upload simulated for local development' };
-}
-
-async function fetchVideoMetadata(videoId) {
-  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${YT_API_KEY}`;
-  const resp = await fetch(url);
-  const data = await resp.json();
-  if (!data.items || !data.items[0]) return null;
-  const snippet = data.items[0].snippet;
-  return {
-    title: snippet.title,
-    description: snippet.description,
-    tags: snippet.tags || [],
-    categoryId: snippet.categoryId
-  };
-}
-
-async function fetchCategoryName(categoryId) {
-  const url = `https://www.googleapis.com/youtube/v3/videoCategories?part=snippet&id=${categoryId}&key=${YT_API_KEY}`;
-  const resp = await fetch(url);
-  const data = await resp.json();
-  if (!data.items || !data.items[0]) return '';
-  return data.items[0].snippet.title;
-}
 
 // --- Message listener ---
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -162,13 +123,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // msg: { videoId }
       chrome.storage.local.get(['sessionActive', 'shareHistoryEnabled', 'goal', 'scoringType', 'simpleMode', 'advancedMode'], async prefs => {
         if (prefs.sessionActive && prefs.shareHistoryEnabled) {
-          const meta = await fetchVideoMetadata(msg.videoId);
-          let category = '';
-          if (meta && meta.categoryId) {
-            category = await fetchCategoryName(meta.categoryId);
-          }
-          // Call backend to get score
+
+          // Call backend to get score AND metadata (title/desc)
+          // We no longer fetch metadata client-side to avoid exposing API keys
+
           let score = null;
+          let title = '';
+          let description = '';
+
           try {
             // Determine which endpoint to use based on scoring type
             let endpoint = `${CONFIG.API_BASE_URL}/score/detailed`;
@@ -190,8 +152,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               requestBody.parameters = Array.isArray(prefs.advancedMode) ? prefs.advancedMode : ['title', 'description', 'tags', 'category'];
             }
 
-            console.log('[background] LOCAL DEV: Making API call to:', endpoint);
-            console.log('[background] Request body:', requestBody);
+            console.log('[background] Making API call to:', endpoint);
 
             const res = await fetch(endpoint, {
               method: 'POST',
@@ -208,24 +169,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
             const data = await res.json();
             score = data.score || data;
-            console.log('[background] LOCAL DEV: API response:', data);
+
+            // Backend now provides metadata!
+            title = data.title || 'Unknown Video';
+            description = data.description || '';
+
           } catch (e) {
-            console.error('[background] LOCAL DEV: API call failed:', e);
-            console.log('[background] LOCAL DEV: Make sure the dev container is running on localhost:8080');
+            console.error('[background] API call failed:', e);
             score = null;
           }
 
-          sessionVideos.push({
-            videoId: msg.videoId,
-            title: meta ? meta.title : '',
-            description: meta ? meta.description : '',
-            tags: meta ? meta.tags : [],
-            category,
-            score,
-            timestamp: Date.now()
-          });
-          // Send score to content script for overlay
           if (score !== null) {
+            sessionVideos.push({
+              videoId: msg.videoId,
+              title: title,
+              description: description,
+              category: '', // Category temporarily removed until backend supports it fully
+              score,
+              timestamp: Date.now()
+            });
+
+            // Send score to content script for overlay
             chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
               if (tabs[0]) {
                 chrome.tabs.sendMessage(tabs[0].id, { type: 'NEW_SCORE', score });

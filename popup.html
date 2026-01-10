@@ -37,11 +37,49 @@
       <label for="sessionDuration">Session duration (minutes):</label>
       <input type="number" id="sessionDuration" min="1" value="25">
       
-      <label for="scoreModeBtn">Scoring Mode:</label>
-      <button id="scoreModeBtn" class="scoring-mode-btn">
-        <span id="scoreModeText">Simple: Title + Description</span>
-        <span class="arrow">▼</span>
-      </button>
+      <label for="scoreModeDropdown">Scoring Mode:</label>
+      <div class="dropdown-container">
+        <button id="scoreModeBtn" class="scoring-mode-btn">
+          <span id="scoreModeText">Simple: Title + Description</span>
+          <span class="arrow">▼</span>
+        </button>
+        <div id="scoreModeDropdown" class="dropdown-menu">
+          <div class="dropdown-section">
+            <div class="dropdown-header">Simple Mode</div>
+            <div class="dropdown-option" data-type="simple" data-mode="title_only">
+              <span class="option-label">Title Only</span>
+              <span class="option-desc">Fastest scoring using only video title</span>
+            </div>
+            <div class="dropdown-option" data-type="simple" data-mode="title_and_description">
+              <span class="option-label">Title + Description</span>
+              <span class="option-desc">Standard scoring with full description</span>
+            </div>
+            <div class="dropdown-option" data-type="simple" data-mode="title_and_clean_desc">
+              <span class="option-label">Title + Clean Description</span>
+              <span class="option-desc">Smart filtering of description noise</span>
+            </div>
+          </div>
+          <div class="dropdown-section">
+            <div class="dropdown-header">Advanced Mode</div>
+            <div class="dropdown-option" data-type="advanced" data-mode="title">
+              <span class="option-label">Title Only</span>
+              <span class="option-desc">Advanced analysis of video title</span>
+            </div>
+            <div class="dropdown-option" data-type="advanced" data-mode="title,description">
+              <span class="option-label">Title + Description</span>
+              <span class="option-desc">Advanced analysis of title and description</span>
+            </div>
+            <div class="dropdown-option" data-type="advanced" data-mode="title,description,tags">
+              <span class="option-label">Title + Description + Tags</span>
+              <span class="option-desc">Multi-factor analysis with tags</span>
+            </div>
+            <div class="dropdown-option" data-type="advanced" data-mode="title,description,tags,category">
+              <span class="option-label">All Factors</span>
+              <span class="option-desc">Complete analysis (title, description, tags, category)</span>
+            </div>
+          </div>
+        </div>
+      </div>
       
       <button id="startSession" class="action">Start Session</button>
       <button id="stopSession"  class="action" disabled>Stop Session</button>
@@ -111,115 +149,7 @@
     </footer>
   </div>
 
-  <!-- Scoring Mode Modal -->
-  <div id="scoringModeModal" class="modal-overlay">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>Select Scoring Parameters</h3>
-        <button id="closeModal" class="close-modal">×</button>
-      </div>
-      <div class="modal-body">
-        <p class="modal-description">Choose your scoring approach:</p>
-        
-        <!-- Scoring Type Selection -->
-        <div class="scoring-type-section">
-          <h4>Scoring Type</h4>
-          <div class="radio-group">
-            <label class="radio-item">
-              <input type="radio" id="simpleMode" name="scoringType" value="simple" checked>
-              <span class="radio-checkmark"></span>
-              <div class="radio-text">
-                <span class="radio-label">Simple</span>
-                <span class="radio-desc">Fast scoring with 3 modes</span>
-              </div>
-            </label>
-            <label class="radio-item">
-              <input type="radio" id="advancedMode" name="scoringType" value="advanced">
-              <span class="radio-checkmark"></span>
-              <div class="radio-text">
-                <span class="radio-label">Advanced</span>
-                <span class="radio-desc">Custom multi-factor analysis</span>
-              </div>
-            </label>
-          </div>
-        </div>
 
-        <!-- Simple Mode Options -->
-        <div id="simpleOptions" class="scoring-options-section">
-          <h4>Simple Mode Options</h4>
-          <div class="radio-group">
-            <label class="radio-item">
-              <input type="radio" id="titleOnly" name="simpleMode" value="title_only">
-              <span class="radio-checkmark"></span>
-              <div class="radio-text">
-                <span class="radio-label">Title Only</span>
-                <span class="radio-desc">Fastest scoring using only video title</span>
-              </div>
-            </label>
-            <label class="radio-item">
-              <input type="radio" id="titleDesc" name="simpleMode" value="title_and_description" checked>
-              <span class="radio-checkmark"></span>
-              <div class="radio-text">
-                <span class="radio-label">Title + Description</span>
-                <span class="radio-desc">Standard scoring with full description</span>
-              </div>
-            </label>
-            <label class="radio-item">
-              <input type="radio" id="titleCleanDesc" name="simpleMode" value="title_and_clean_desc">
-              <span class="radio-checkmark"></span>
-              <div class="radio-text">
-                <span class="radio-label">Title + Clean Description</span>
-                <span class="radio-desc">Smart filtering of description noise</span>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <!-- Advanced Mode Options -->
-        <div id="advancedOptions" class="scoring-options-section" style="display: none;">
-          <h4>Advanced Mode Options</h4>
-          <p class="advanced-description">Select 1-4 factors to analyze (minimum 1 required):</p>
-          <div class="checkbox-group">
-            <label class="checkbox-item">
-              <input type="checkbox" id="titleCheck" checked>
-              <span class="checkmark"></span>
-              <div class="checkbox-text">
-                <span class="checkbox-label">Title</span>
-                <span class="checkbox-desc">Video title analysis</span>
-              </div>
-            </label>
-            <label class="checkbox-item">
-              <input type="checkbox" id="descriptionCheck" checked>
-              <span class="checkmark"></span>
-              <div class="checkbox-text">
-                <span class="checkbox-label">Description</span>
-                <span class="checkbox-desc">Video description analysis</span>
-              </div>
-            </label>
-            <label class="checkbox-item">
-              <input type="checkbox" id="tagsCheck">
-              <span class="checkmark"></span>
-              <div class="checkbox-text">
-                <span class="checkbox-label">Tags</span>
-                <span class="checkbox-desc">Video tags analysis</span>
-              </div>
-            </label>
-            <label class="checkbox-item">
-              <input type="checkbox" id="categoryCheck">
-              <span class="checkmark"></span>
-              <div class="checkbox-text">
-                <span class="checkbox-label">Category</span>
-                <span class="checkbox-desc">Video category analysis</span>
-              </div>
-            </label>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button id="applyScoringMode" class="apply-btn">Apply Selection</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- Chart.js library -->
   <script src="libs/chart.min.js"></script>

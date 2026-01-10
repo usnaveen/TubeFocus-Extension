@@ -17,7 +17,7 @@
   ],
   "host_permissions": [
     "https://*.youtube.com/*",
-    "https://yt-scorer-api-49646986060.us-central1.run.app/*"
+    "https://simplescore-49646986060.asia-south2.run.app/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -32,10 +32,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.youtube.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://*.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
 }
-

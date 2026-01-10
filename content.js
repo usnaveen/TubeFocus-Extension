@@ -210,19 +210,29 @@ function updateScoreDisplay(state, data = {}) {
       borderColor = '#888';
       break;
     case 'error':
-      html = `<div style="font-size: 12px; opacity: 0.9;">${data.message || 'Error'}</div>`;
+      const errorMsg = data.message || 'Error';
+      html = `
+        <div style="font-size: 11px; line-height: 1.2; text-align: center;">
+          <div style="margin-bottom: 2px;">⚠️ Error</div>
+          <div style="font-size: 9px; opacity: 0.9;">${errorMsg}</div>
+        </div>
+      `;
       color = '#dc2626';
       borderColor = '#dc2626';
       break;
     case 'success':
       const score = data.score;
-      const percentage = Math.round(score * 100);
-      if (score <= 0.3) color = '#dc2626';
-      else if (score >= 0.8) color = '#16a34a';
+      // Handle both decimal (0.52) and percentage (52) formats
+      const percentage = score > 1 ? Math.round(score) : Math.round(score * 100);
+      // Use normalized score for color calculation (always 0-1 range)
+      const normalizedScore = score > 1 ? score / 100 : score;
+      
+      if (normalizedScore <= 0.3) color = '#dc2626';
+      else if (normalizedScore >= 0.8) color = '#16a34a';
       else {
         const r1 = 220, g1 = 38, b1 = 38;
         const r2 = 22, g2 = 163, b2 = 74;
-        const ratio = (score - 0.3) / 0.5;
+        const ratio = (normalizedScore - 0.3) / 0.5;
         const r = Math.round(r1 + (r2 - r1) * ratio);
         const g = Math.round(g1 + (g2 - g1) * ratio);
         const b = Math.round(b1 + (b2 - b1) * ratio);
@@ -277,12 +287,15 @@ function applyColor(score) {
   let primary = 'transparent';
   
   if (score !== null && score !== undefined) {
-    if (score <= 0.3) primary = '#dc2626';
-    else if (score >= 0.8) primary = '#16a34a';
+    // Handle both decimal (0.52) and percentage (52) formats
+    const normalizedScore = score > 1 ? score / 100 : score;
+    
+    if (normalizedScore <= 0.3) primary = '#dc2626';
+    else if (normalizedScore >= 0.8) primary = '#16a34a';
     else {
       const r1 = 220, g1 = 38, b1 = 38; // Red
       const r2 = 22, g2 = 163, b2 = 74; // Green
-      const ratio = (score - 0.3) / 0.5;
+      const ratio = (normalizedScore - 0.3) / 0.5;
       const r = Math.round(r1 + (r2 - r1) * ratio);
       const g = Math.round(g1 + (g2 - g1) * ratio);
       const b = Math.round(b1 + (b2 - b1) * ratio);
@@ -402,7 +415,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'THEME_CHANGED':
       // Update the score display with new theme colors
       if (scoreDisplay && currentScore !== null) {
-        updateScoreDisplay(currentScore, lastScores?.category_name || 'Video');
+        let category = 'Content';
+        if (lastScores?.category_name && lastScores.category_name !== 'Unknown') {
+          category = lastScores.category_name;
+        } else if (lastScores?.category && lastScores.category !== 'Unknown') {
+          category = lastScores.category;
+        } else if (lastScores?.mode) {
+          switch (lastScores.mode) {
+            case 'title_only': category = 'Title Analysis'; break;
+            case 'title_and_description': category = 'Title + Desc'; break;
+            case 'title_and_clean_desc': category = 'Smart Analysis'; break;
+            default: category = 'Simple Mode'; break;
+          }
+        }
+        updateScoreDisplay('success', { score: currentScore, category: category });
       }
       break;
 
@@ -582,6 +608,11 @@ async function tryScore() {
 
   lastVideoId = vid;
   currentScore = null;
+  
+  // Ensure score display exists and show loading state
+  if (!scoreDisplay) {
+    scoreDisplay = createScoreDisplay();
+  }
   updateScoreDisplay('loading');
 
   chrome.storage.local.get(['scoringType', 'simpleMode', 'advancedMode', 'goal'], prefs => {
@@ -608,7 +639,37 @@ async function tryScore() {
       currentScore = response.score;
       lastScores = response;
       applyColor(currentScore);
-      updateScoreDisplay('success', { score: currentScore, category: response.category_name || 'Video' });
+      
+      // Extract category information from various possible response fields
+      let category = 'Content'; // Better default fallback than "Video"
+      
+      if (response.category_name && response.category_name !== 'Unknown' && response.category_name !== '') {
+        category = response.category_name;
+      } else if (response.category && response.category !== 'Unknown' && response.category !== '') {
+        category = response.category;
+      } else if (response.video_category && response.video_category !== 'Unknown' && response.video_category !== '') {
+        category = response.video_category;
+      } else if (response.metadata && response.metadata.category && response.metadata.category !== 'Unknown' && response.metadata.category !== '') {
+        category = response.metadata.category;
+      } else {
+        // If this is simple scoring (no category_name field), show mode-specific label
+        if (response.mode) {
+          switch (response.mode) {
+            case 'title_only': category = 'Title Analysis'; break;
+            case 'title_and_description': category = 'Title + Desc'; break;
+            case 'title_and_clean_desc': category = 'Smart Analysis'; break;
+            default: category = 'Simple Mode'; break;
+          }
+        } else {
+          // Advanced mode but no category available
+          category = 'YouTube Video';
+        }
+      }
+      
+      // Debug logging can be uncommented for troubleshooting
+      // console.log('[content.js] Category resolved:', category, 'from response:', response);
+      
+      updateScoreDisplay('success', { score: currentScore, category: category });
 
       chrome.runtime.sendMessage({ type: 'NEW_SCORE', score: currentScore });
 
@@ -628,10 +689,24 @@ async function tryScore() {
         return;
       }
 
+      // Map technical errors to user-friendly messages
+      let userMsg = msg;
+      if (msg.includes('Backend server not running')) {
+        userMsg = "Can't fetch score";
+      } else if (msg.includes('Cannot connect to backend')) {
+        userMsg = "Connection failed";
+      } else if (msg.includes('Backend server not available')) {
+        userMsg = "Server unavailable";
+      } else if (msg.includes('API endpoint not found')) {
+        userMsg = "Service not found";
+      } else if (msg.includes('Failed to fetch')) {
+        userMsg = "Network error";
+      }
+
       removeColor(); // Use the new function on error as well
-      updateScoreDisplay('error', { message: msg });
-      showErrorOverlay(msg);
-      chrome.runtime.sendMessage({ type: 'ERROR', error: msg }, () => {
+      updateScoreDisplay('error', { message: userMsg });
+      showErrorOverlay(userMsg);
+      chrome.runtime.sendMessage({ type: 'ERROR', error: userMsg }, () => {
         if (chrome.runtime.lastError) { /* do nothing */ }
       });
     });

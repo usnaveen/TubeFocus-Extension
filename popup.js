@@ -10,15 +10,8 @@ const summaryMessage = document.getElementById('summaryMessage');
 const chartCanvas    = document.getElementById('scoreChart').getContext('2d');
 const scoreModeBtn = document.getElementById('scoreModeBtn');
 const scoreModeText = document.getElementById('scoreModeText');
-const scoringModeModal = document.getElementById('scoringModeModal');
-const closeModal = document.getElementById('closeModal');
-const applyScoringMode = document.getElementById('applyScoringMode');
-
-// Checkbox elements
-const titleCheck = document.getElementById('titleCheck');
-const descriptionCheck = document.getElementById('descriptionCheck');
-const tagsCheck = document.getElementById('tagsCheck');
-const categoryCheck = document.getElementById('categoryCheck');
+const dropdownContainer = document.querySelector('.dropdown-container');
+const dropdownMenu = document.getElementById('scoreModeDropdown');
 
 const toggleOnBtn    = document.getElementById('toggleOn');
 const toggleOffBtn   = document.getElementById('toggleOff');
@@ -222,16 +215,20 @@ function updateUI(state) {
       return;
     }
     chrome.storage.local.get(['lastVideoId', 'currentScore'], s => {
-      scoreDisplay.textContent =
-        s.lastVideoId === videoId && s.currentScore != null
-          ? (s.currentScore * 100).toFixed(1) + '%'
-          : '–';
+      if (s.lastVideoId === videoId && s.currentScore != null) {
+        // Handle both decimal (0.52) and percentage (52) formats
+        const score = s.currentScore;
+        const percentage = score > 1 ? score : (score * 100);
+        scoreDisplay.textContent = percentage.toFixed(1) + '%';
+      } else {
+        scoreDisplay.textContent = '–';
+      }
     });
   });
 }
 
 // --- Initialize UI & Listen for Changes ---
-chrome.storage.local.get(['sessionActive', 'goal', 'scoringType', 'simpleMode', 'advancedMode', 'sessionEndTime', 'shareHistoryEnabled', 'selectedTheme'], (prefs) => {
+chrome.storage.local.get(['sessionActive', 'goal', 'scoringType', 'simpleMode', 'advancedMode', 'sessionEndTime', 'shareHistoryEnabled', 'selectedTheme', 'watchedScores', 'showSummaryOnOpen'], (prefs) => {
   updateUI(prefs);
   shareHistoryToggle.checked = !!prefs.shareHistoryEnabled;
   
@@ -239,6 +236,17 @@ chrome.storage.local.get(['sessionActive', 'goal', 'scoringType', 'simpleMode', 
   const theme = prefs.selectedTheme || 'crimson-vanilla';
   document.documentElement.setAttribute('data-theme', theme);
   themeSelector.value = theme;
+  
+  // If session just ended and there are scores to show, switch to summary tab
+  if (!prefs.sessionActive && prefs.watchedScores && prefs.watchedScores.length > 0 && prefs.showSummaryOnOpen) {
+    const summaryTab = document.querySelector('[data-tab="summary"]');
+    if (summaryTab) {
+      summaryTab.click();
+      renderSummary();
+    }
+    // Clear the flag so we don't show summary every time popup opens
+    chrome.storage.local.set({ showSummaryOnOpen: false });
+  }
 });
 
 chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -315,17 +323,18 @@ chrome.storage.local.get(['scoringType', 'simpleMode', 'advancedMode'], (data) =
     currentAdvancedMode = data.advancedMode;
   }
   updateScoringModeDisplay();
-  updateModalDisplay();
 });
 
 function updateScoringModeDisplay() {
+  let displayText = '';
+  
   if (currentScoringType === 'simple') {
     const modeNames = {
       'title_only': 'Title Only',
       'title_and_description': 'Title + Description',
       'title_and_clean_desc': 'Title + Clean Description'
     };
-    scoreModeText.textContent = `Simple: ${modeNames[currentSimpleMode]}`;
+    displayText = `Simple: ${modeNames[currentSimpleMode]}`;
   } else {
     const modeNames = {
       'title': 'Title',
@@ -340,127 +349,60 @@ function updateScoringModeDisplay() {
     }
     
     const selectedNames = currentAdvancedMode.map(mode => modeNames[mode]);
-    const displayText = selectedNames.length > 0 ? selectedNames.join(' + ') : 'None selected';
-    scoreModeText.textContent = `Advanced: ${displayText}`;
+    const selectedText = selectedNames.length > 0 ? selectedNames.join(' + ') : 'None selected';
+    displayText = `Advanced: ${selectedText}`;
   }
+  
+  scoreModeText.textContent = displayText;
+  
+  // Update selected state in dropdown
+  updateDropdownSelection();
 }
 
-function updateModalDisplay() {
-  // Update radio buttons for scoring type
-  const simpleTypeRadio = document.getElementById('simpleMode');
-  const advancedTypeRadio = document.getElementById('advancedMode');
-  if (simpleTypeRadio && advancedTypeRadio) {
-    simpleTypeRadio.checked = currentScoringType === 'simple';
-    advancedTypeRadio.checked = currentScoringType === 'advanced';
-  }
+function updateDropdownSelection() {
+  // Clear all selected states
+  document.querySelectorAll('.dropdown-option').forEach(option => {
+    option.classList.remove('selected');
+  });
   
-  // Show/hide appropriate sections
-  const simpleOptions = document.getElementById('simpleOptions');
-  const advancedOptions = document.getElementById('advancedOptions');
-  if (simpleOptions && advancedOptions) {
-    simpleOptions.style.display = currentScoringType === 'simple' ? 'block' : 'none';
-    advancedOptions.style.display = currentScoringType === 'advanced' ? 'block' : 'none';
-  }
-  
-  // Update simple mode radio buttons
-  const titleOnlyRadio = document.getElementById('titleOnly');
-  const titleDescRadio = document.getElementById('titleDesc');
-  const titleCleanDescRadio = document.getElementById('titleCleanDesc');
-  if (titleOnlyRadio && titleDescRadio && titleCleanDescRadio) {
-    titleOnlyRadio.checked = currentSimpleMode === 'title_only';
-    titleDescRadio.checked = currentSimpleMode === 'title_and_description';
-    titleCleanDescRadio.checked = currentSimpleMode === 'title_and_clean_desc';
-  }
-  
-  // Update advanced mode checkboxes
-  const titleCheck = document.getElementById('titleCheck');
-  const descriptionCheck = document.getElementById('descriptionCheck');
-  const tagsCheck = document.getElementById('tagsCheck');
-  const categoryCheck = document.getElementById('categoryCheck');
-  if (titleCheck && descriptionCheck && tagsCheck && categoryCheck) {
-    titleCheck.checked = currentAdvancedMode.includes('title');
-    descriptionCheck.checked = currentAdvancedMode.includes('description');
-    tagsCheck.checked = currentAdvancedMode.includes('tags');
-    categoryCheck.checked = currentAdvancedMode.includes('category');
-  }
-}
-
-// Open modal
-scoreModeBtn.addEventListener('click', () => {
-  scoringModeModal.classList.add('active');
-});
-
-// Close modal
-closeModal.addEventListener('click', () => {
-  scoringModeModal.classList.remove('active');
-});
-
-// Close modal when clicking outside
-scoringModeModal.addEventListener('click', (e) => {
-  if (e.target === scoringModeModal) {
-    scoringModeModal.classList.remove('active');
-  }
-});
-
-// Add event listeners for scoring type radio buttons
-document.addEventListener('DOMContentLoaded', () => {
-  const simpleTypeRadio = document.getElementById('simpleMode');
-  const advancedTypeRadio = document.getElementById('advancedMode');
-  
-  if (simpleTypeRadio && advancedTypeRadio) {
-    simpleTypeRadio.addEventListener('change', () => {
-      currentScoringType = 'simple';
-      updateModalDisplay();
-    });
-    
-    advancedTypeRadio.addEventListener('change', () => {
-      currentScoringType = 'advanced';
-      updateModalDisplay();
-    });
-  }
-});
-
-// Apply scoring mode
-applyScoringMode.addEventListener('click', () => {
+  // Find and select the current option
   if (currentScoringType === 'simple') {
-    // Get selected simple mode
-    const titleOnlyRadio = document.getElementById('titleOnly');
-    const titleDescRadio = document.getElementById('titleDesc');
-    const titleCleanDescRadio = document.getElementById('titleCleanDesc');
-    
-    if (titleOnlyRadio && titleOnlyRadio.checked) {
-      currentSimpleMode = 'title_only';
-    } else if (titleDescRadio && titleDescRadio.checked) {
-      currentSimpleMode = 'title_and_description';
-    } else if (titleCleanDescRadio && titleCleanDescRadio.checked) {
-      currentSimpleMode = 'title_and_clean_desc';
-    } else {
-      // Default fallback
-      currentSimpleMode = 'title_and_description';
+    const selectedOption = document.querySelector(`[data-type="simple"][data-mode="${currentSimpleMode}"]`);
+    if (selectedOption) {
+      selectedOption.classList.add('selected');
     }
   } else {
-    // Advanced mode - get selected checkboxes
-    const newMode = [];
-    const titleCheck = document.getElementById('titleCheck');
-    const descriptionCheck = document.getElementById('descriptionCheck');
-    const tagsCheck = document.getElementById('tagsCheck');
-    const categoryCheck = document.getElementById('categoryCheck');
-    
-    if (titleCheck && titleCheck.checked) newMode.push('title');
-    if (descriptionCheck && descriptionCheck.checked) newMode.push('description');
-    if (tagsCheck && tagsCheck.checked) newMode.push('tags');
-    if (categoryCheck && categoryCheck.checked) newMode.push('category');
-    
-    // Ensure at least one option is selected
-    if (newMode.length === 0) {
-      newMode.push('title'); // Default to title only
-      if (titleCheck) titleCheck.checked = true;
+    // For advanced mode, find the option that matches the current selection
+    const modeString = currentAdvancedMode.join(',');
+    const selectedOption = document.querySelector(`[data-type="advanced"][data-mode="${modeString}"]`);
+    if (selectedOption) {
+      selectedOption.classList.add('selected');
     }
-    
-    currentAdvancedMode = newMode;
+  }
+}
+
+// Dropdown functionality
+function toggleDropdown() {
+  dropdownContainer.classList.toggle('open');
+  dropdownMenu.classList.toggle('show');
+}
+
+function closeDropdown() {
+  dropdownContainer.classList.remove('open');
+  dropdownMenu.classList.remove('show');
+}
+
+function selectScoringMode(type, mode) {
+  if (type === 'simple') {
+    currentScoringType = 'simple';
+    currentSimpleMode = mode;
+  } else {
+    currentScoringType = 'advanced';
+    currentAdvancedMode = mode.split(',');
   }
   
   updateScoringModeDisplay();
+  closeDropdown();
   
   // Save to storage
   chrome.storage.local.set({ 
@@ -468,9 +410,6 @@ applyScoringMode.addEventListener('click', () => {
     simpleMode: currentSimpleMode,
     advancedMode: currentAdvancedMode
   });
-  
-  // Close modal
-  scoringModeModal.classList.remove('active');
   
   // Update active session if running
   chrome.storage.local.get('sessionActive', prefs => {
@@ -485,38 +424,44 @@ applyScoringMode.addEventListener('click', () => {
       scoreDisplay.classList.remove('error');
       setTimeout(() => {
         chrome.storage.local.get(['lastVideoId','currentScore'], s => {
-          scoreDisplay.textContent =
-            s.currentScore != null ? (s.currentScore * 100).toFixed(1) + '%' : '\u2013';
+          if (s.currentScore != null) {
+            // Handle both decimal (0.52) and percentage (52) formats
+            const score = s.currentScore;
+            const percentage = score > 1 ? score : (score * 100);
+            scoreDisplay.textContent = percentage.toFixed(1) + '%';
+          } else {
+            scoreDisplay.textContent = '\u2013';
+          }
         });
       }, 2000);
     }
   });
-});
-
-// Prevent unchecking all options
-function preventUncheckAll(clickedCheckbox) {
-  const checkboxes = [titleCheck, descriptionCheck, tagsCheck, categoryCheck];
-  const checkedCount = checkboxes.filter(cb => cb.checked).length;
-  // If this is the last checked checkbox being unchecked, prevent it
-  if (checkedCount === 1 && !clickedCheckbox.checked) {
-    clickedCheckbox.checked = true;
-    return false; // Prevent the uncheck
-  }
-  return true; // Allow the check/uncheck
 }
 
-titleCheck.addEventListener('change', (e) => {
-  preventUncheckAll(e.target);
+// Dropdown event listeners
+scoreModeBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleDropdown();
 });
-descriptionCheck.addEventListener('change', (e) => {
-  preventUncheckAll(e.target);
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (!dropdownContainer.contains(e.target)) {
+    closeDropdown();
+  }
 });
-tagsCheck.addEventListener('change', (e) => {
-  preventUncheckAll(e.target);
+
+// Handle dropdown option selection
+dropdownMenu.addEventListener('click', (e) => {
+  const option = e.target.closest('.dropdown-option');
+  if (option) {
+    const type = option.getAttribute('data-type');
+    const mode = option.getAttribute('data-mode');
+    selectScoringMode(type, mode);
+  }
 });
-categoryCheck.addEventListener('change', (e) => {
-  preventUncheckAll(e.target);
-});
+
+
 
 // --- Start Session ---
 startBtn.addEventListener('click', () => {
@@ -560,16 +505,27 @@ toggleOffBtn.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'STOP_SESSION' });
 });
 
-// --- Live “Current” score updates from content.js ---
+// --- Live "Current" score updates from content.js ---
 chrome.runtime.onMessage.addListener(msg => {
   if (msg.type === 'NEW_SCORE') {
-    scoreDisplay.textContent = (msg.score * 100).toFixed(1) + '%';
+    // Handle both decimal (0.52) and percentage (52) formats
+    const score = msg.score;
+    const percentage = score > 1 ? score : (score * 100);
+    scoreDisplay.textContent = percentage.toFixed(1) + '%';
     getCurrentVideoId(videoId => {
       if (!videoId) return;
       chrome.storage.local.set({ currentScore: msg.score, lastVideoId: videoId });
     });
   } else if (msg.type === 'SHOW_SUMMARY') {
-    document.querySelector('[data-tab="summary"]').click();
+    // Switch to summary tab and ensure it renders
+    const summaryTab = document.querySelector('[data-tab="summary"]');
+    if (summaryTab) {
+      summaryTab.click();
+      // Small delay to ensure tab switch completes, then render summary
+      setTimeout(() => {
+        renderSummary();
+      }, 100);
+    }
   } else if (msg.type === 'ERROR') {
     scoreDisplay.textContent = msg.error || 'An error occurred.';
     scoreDisplay.classList.add('error');
@@ -578,23 +534,46 @@ chrome.runtime.onMessage.addListener(msg => {
 
 // --- Render session summary, chart & feedback ---
 function renderSummary() {
-  chrome.storage.local.get('watchedScores', data => {
+  chrome.storage.local.get(['watchedScores', 'sessionActive'], data => {
     const scores = data.watchedScores || [];
-    console.log('Retrieved scores for chart:', scores);
+    const sessionActive = data.sessionActive || false;
+    console.log('Retrieved scores for chart:', scores, 'Session active:', sessionActive);
     
-    const count  = scores.length;
-    const avg    = count ? (scores.reduce((a,b)=>a+b,0)/count * 100).toFixed(1) : 0;
-    const msgs   = avg >= 60 ? positiveMsgs : negativeMsgs;
+    const count = scores.length;
+    
+    if (count === 0) {
+      // No session data to show
+      if (sessionActive) {
+        summaryMessage.innerHTML = `
+          <div>Session in progress...</div>
+          <div class="feedback">Start watching videos to see your scores!</div>
+        `;
+      } else {
+        summaryMessage.innerHTML = `
+          <div>No session data</div>
+          <div class="feedback">Start a new session to track your video scores!</div>
+        `;
+      }
+      initChart([], []); // Empty chart
+      return;
+    }
+    
+    // Handle both decimal (0.52) and percentage (52) formats for scores
+    const normalizedScores = scores.map(score => score > 1 ? score / 100 : score);
+    const avg = count ? (normalizedScores.reduce((a,b)=>a+b,0)/count * 100).toFixed(1) : 0;
+    const msgs = avg >= 60 ? positiveMsgs : negativeMsgs;
     const feedback = msgs[Math.floor(Math.random()*msgs.length)];
 
+    // Show different message based on session state
+    const sessionStatus = sessionActive ? "Current session" : "Last session";
     summaryMessage.innerHTML = `
-      <div>Watched ${count} videos • Avg: ${avg}%</div>
+      <div>${sessionStatus}: ${count} videos • Avg: ${avg}%</div>
       <div class="feedback">${feedback || ''}</div>
     `;
     
-    // Convert scores from 0-1 to 0-100 for the chart
-    const chartScores = scores.map(score => score * 100);
-    console.log('Chart scores (0-100):', chartScores);
+    // Convert normalized scores (0-1) to percentage (0-100) for the chart
+    const chartScores = normalizedScores.map(score => score * 100);
+    console.log('Chart scores (normalized to 0-100):', chartScores);
     initChart(scores.map((_,i)=>i+1), chartScores);
   });
 }
