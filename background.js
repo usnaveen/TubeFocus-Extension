@@ -15,21 +15,12 @@ const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;
 // --- Alarms for session management ---
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === 'sessionEnd') {
-    chrome.storage.local.get(['sessionEndTime', 'shareHistoryEnabled', 'goal'], data => {
+    chrome.storage.local.get(['sessionEndTime'], data => {
       if (Date.now() >= data.sessionEndTime) {
         // End the session and set flag to show summary when popup opens
         chrome.storage.local.set({ sessionActive: false, sessionEndTime: null, showSummaryOnOpen: true }, () => {
-          // Upload session data if sharing is enabled
-          if (data.shareHistoryEnabled && sessionVideos.length > 0) {
-            console.log('[background] LOCAL DEV: Session data upload disabled - /upload endpoint not available in dev container');
-            console.log('[background] Session data would contain:', sessionVideos.length, 'videos');
-            // For local development, just clear the session videos and show summary
-            sessionVideos = [];
-            chrome.runtime.sendMessage({ type: 'SHOW_SUMMARY' });
-          } else {
-            // No data to upload or sharing disabled, just show summary
-            chrome.runtime.sendMessage({ type: 'SHOW_SUMMARY' });
-          }
+          // Show summary
+          chrome.runtime.sendMessage({ type: 'SHOW_SUMMARY' });
 
           // Send message to all tabs to refresh
           chrome.tabs.query({}, (tabs) => {
@@ -48,7 +39,6 @@ chrome.alarms.onAlarm.addListener(alarm => {
   }
 });
 
-let sessionVideos = [];
 
 // --- Message listener ---
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -67,7 +57,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'START_SESSION') {
       const endTime = Date.now() + msg.duration * 60 * 1000;
 
-      // Handle new scoring mode structure - clear previous session data
+      // Simplified scoring - always use simple mode with title and description
       const storageData = {
         sessionActive: true,
         sessionEndTime: endTime,
@@ -75,29 +65,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         watchedScores: []  // Clear previous session scores when starting new session
       };
 
-      if (msg.scoringType === 'simple') {
-        storageData.scoringType = 'simple';
-        storageData.simpleMode = msg.simpleMode || 'title_and_description';
-      } else if (msg.scoringType === 'advanced') {
-        storageData.scoringType = 'advanced';
-        storageData.advancedMode = msg.advancedMode || ['title', 'description'];
-      } else {
-        // Legacy support for old scoreMode format
-        storageData.scoreMode = msg.scoreMode || ['title', 'description'];
-      }
-
       chrome.storage.local.set(storageData, () => {
         chrome.alarms.create('sessionEnd', { delayInMinutes: msg.duration });
       });
-      sessionVideos = [];
     } else if (msg.type === 'STOP_SESSION') {
       // End session but preserve scores for summary and set flag to show summary
       chrome.storage.local.set({ sessionActive: false, sessionEndTime: null, showSummaryOnOpen: true }, () => {
         chrome.alarms.clear('sessionEnd');
         console.log('[background] Session stopped manually, showing summary.');
-        // Reset session videos array
-        sessionVideos = [];
-
         // Show summary and reload the active tab like before
         chrome.runtime.sendMessage({ type: 'SHOW_SUMMARY' });
 
@@ -121,8 +96,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     } else if (msg.type === 'videoData') {
       // msg: { videoId }
-      chrome.storage.local.get(['sessionActive', 'shareHistoryEnabled', 'goal', 'scoringType', 'simpleMode', 'advancedMode'], async prefs => {
-        if (prefs.sessionActive && prefs.shareHistoryEnabled) {
+      chrome.storage.local.get(['sessionActive', 'goal'], async prefs => {
+        if (prefs.sessionActive) {
 
           // Call backend to get score AND metadata (title/desc)
           // We no longer fetch metadata client-side to avoid exposing API keys
@@ -132,25 +107,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           let description = '';
 
           try {
-            // Determine which endpoint to use based on scoring type
-            let endpoint = `${CONFIG.API_BASE_URL}/score/detailed`;
-            let requestBody = {
-              video_id: msg.videoId,
-              goal: prefs.goal
+            // Always use simple scoring endpoint
+            const endpoint = `${CONFIG.API_BASE_URL}/score/simple`;
+            const requestBody = {
+              video_url: `https://www.youtube.com/watch?v=${msg.videoId}`,
+              goal: prefs.goal,
+              mode: 'title_and_description'
             };
-
-            if (prefs.scoringType === 'simple') {
-              // Use standard endpoint (Gemini powered)
-              endpoint = `${CONFIG.API_BASE_URL}/score/simple`;
-              requestBody = {
-                video_url: `https://www.youtube.com/watch?v=${msg.videoId}`,
-                goal: prefs.goal,
-                mode: prefs.simpleMode || 'title_and_description'
-              };
-            } else {
-              // Use the advanced endpoint
-              requestBody.parameters = Array.isArray(prefs.advancedMode) ? prefs.advancedMode : ['title', 'description', 'tags', 'category'];
-            }
 
             console.log('[background] Making API call to:', endpoint);
 
@@ -180,15 +143,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
 
           if (score !== null) {
-            sessionVideos.push({
-              videoId: msg.videoId,
-              title: title,
-              description: description,
-              category: '', // Category temporarily removed until backend supports it fully
-              score,
-              timestamp: Date.now()
-            });
-
             // Send score to content script for overlay
             chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
               if (tabs[0]) {
@@ -201,25 +155,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     } else if (msg.type === 'FETCH_SCORE') {
       console.log('[background] FETCH_SCORE request', msg);
 
-      // Determine which endpoint to use based on scoring type
-      let endpoint = API_ENDPOINT;
-      let requestBody = {
-        video_id: msg.url.match(/[?&]v=([^&]+)/)?.[1] || '',
-        goal: msg.goal
+      // Always use simple scoring endpoint
+      const endpoint = `${CONFIG.API_BASE_URL}/score/simple`;
+      const requestBody = {
+        video_url: msg.url,
+        goal: msg.goal,
+        mode: 'title_and_description'
       };
-
-      if (msg.scoringType === 'simple') {
-        // Use standard endpoint (Gemini powered)
-        endpoint = `${CONFIG.API_BASE_URL}/score/simple`;
-        requestBody = {
-          video_url: msg.url,
-          goal: msg.goal,
-          mode: msg.simpleMode || 'title_and_description'
-        };
-      } else {
-        // Use the advanced endpoint
-        requestBody.parameters = Array.isArray(msg.advancedMode) ? msg.advancedMode : ['title', 'description', 'tags', 'category'];
-      }
 
       console.log('[background] LOCAL DEV: FETCH_SCORE API call to:', endpoint);
       console.log('[background] LOCAL DEV: Request body:', requestBody);

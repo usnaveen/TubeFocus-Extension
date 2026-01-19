@@ -5,12 +5,10 @@ const CONFIG = {
   API_KEY: 'test_key',
 
   // Feature flags
-  ENABLE_FEEDBACK: true,
-  ENABLE_SESSION_HISTORY: true,
+  ENABLE_SESSION_HISTORY: false, // MLP/feedback training removed
 
   // UI Configuration
   SCORE_UPDATE_INTERVAL: 1000, // milliseconds
-  FEEDBACK_TOAST_DURATION: 2000, // milliseconds
 
   // Development mode
   DEBUG_MODE: true,

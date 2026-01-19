@@ -228,10 +228,21 @@ function updateUI(state) {
 }
 
 // --- Initialize UI & Listen for Changes ---
-chrome.storage.local.get(['sessionActive', 'goal', 'scoringType', 'simpleMode', 'advancedMode', 'sessionEndTime', 'shareHistoryEnabled', 'selectedTheme', 'watchedScores', 'showSummaryOnOpen'], (prefs) => {
+chrome.storage.local.get(['sessionActive', 'goal', 'scoringType', 'simpleMode', 'advancedMode', 'sessionEndTime', 'selectedTheme', 'watchedScores', 'showSummaryOnOpen'], (prefs) => {
   updateUI(prefs);
-  shareHistoryToggle.checked = !!prefs.shareHistoryEnabled;
-  
+
+  // Initialize scoring mode
+  if (prefs.scoringType) {
+    currentScoringType = prefs.scoringType;
+  }
+  if (prefs.simpleMode) {
+    currentSimpleMode = prefs.simpleMode;
+  }
+  if (prefs.advancedMode) {
+    currentAdvancedMode = prefs.advancedMode;
+  }
+  updateScoringModeDisplay();
+
   // Initialize theme
   const theme = prefs.selectedTheme || 'crimson-vanilla';
   document.documentElement.setAttribute('data-theme', theme);
@@ -292,11 +303,6 @@ backToMainBtn.addEventListener('click', () => {
   toActivate.classList.add('active');
 });
 
-shareHistoryToggle.addEventListener('change', () => {
-  const enabled = shareHistoryToggle.checked;
-  chrome.storage.local.set({ shareHistoryEnabled: enabled });
-  chrome.runtime.sendMessage({ type: 'SHARE_HISTORY_TOGGLE', enabled });
-});
 
 // Theme switching functionality
 themeSelector.addEventListener('change', () => {
