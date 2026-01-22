@@ -1,13 +1,13 @@
 // background.js
-console.log('[background] service worker started - LOCAL DEVELOPMENT MODE');
-console.log('[background] API Base URL:', 'http://localhost:8080');
+console.log('[background] service worker started - CLOUD RUN MODE');
+console.log('[background] API Base URL:', 'https://yt-scorer-api-933573987016.us-central1.run.app');
 console.log('[background] Available endpoints: /score/detailed, /score/simple, /score/simple/fast, /feedback, /health');
 
-// Configuration - LOCAL DEVELOPMENT
+// Configuration - CLOUD RUN
 const CONFIG = {
-  API_BASE_URL: 'http://localhost:8080',
+  API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',
   API_KEY: 'test_key'
-  // Note: Using Cloud Function (Gen 2) via /simple_score (mapped to root or explicit path)
+  // Note: Using Google Cloud Run deployment
 };
 
 const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;

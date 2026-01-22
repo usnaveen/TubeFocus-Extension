@@ -1,7 +1,7 @@
-// Configuration for TubeFocus Extension - LOCAL DEVELOPMENT MODE
+// Configuration for TubeFocus Extension - CLOUD RUN MODE
 const CONFIG = {
-  // API Configuration - LOCAL DEVELOPMENT
-  API_BASE_URL: 'http://localhost:8080',
+  // API Configuration - CLOUD RUN
+  API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',
   API_KEY: 'test_key',
 
   // Feature flags

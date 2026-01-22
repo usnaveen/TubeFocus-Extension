@@ -1,5 +1,5 @@
 // content.js
-console.log('[content.js] injected - LOCAL DEVELOPMENT MODE');
+console.log('[content.js] injected - CLOUD RUN MODE');
 console.log('[content.js] API Base URL:', 'https://yt-scorer-api-933573987016.us-central1.run.app');
 
 let sessionActive = false;
