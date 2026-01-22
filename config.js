@@ -1,7 +1,7 @@
-// Configuration for TubeFocus Extension - PRODUCTION MODE
+// Configuration for TubeFocus Extension - LOCAL DEVELOPMENT MODE
 const CONFIG = {
-  // API Configuration - PRODUCTION
-  API_BASE_URL: 'https://simplescore-49646986060.asia-south2.run.app',
+  // API Configuration - LOCAL DEVELOPMENT
+  API_BASE_URL: 'http://localhost:8080',
   API_KEY: 'test_key',
 
   // Feature flags

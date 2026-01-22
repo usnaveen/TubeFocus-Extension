@@ -3,9 +3,9 @@ console.log('[background] service worker started - LOCAL DEVELOPMENT MODE');
 console.log('[background] API Base URL:', 'http://localhost:8080');
 console.log('[background] Available endpoints: /score/detailed, /score/simple, /score/simple/fast, /feedback, /health');
 
-// Configuration - PRODUCTION
+// Configuration - LOCAL DEVELOPMENT
 const CONFIG = {
-  API_BASE_URL: 'https://simplescore-49646986060.asia-south2.run.app',
+  API_BASE_URL: 'http://localhost:8080',
   API_KEY: 'test_key'
   // Note: Using Cloud Function (Gen 2) via /simple_score (mapped to root or explicit path)
 };
@@ -234,6 +234,145 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
 
           sendResponse({ error: errorMessage });
+        });
+      return true; // Keep the message channel open for sendResponse
+    } else if (msg.type === 'AUDIT_VIDEO') {
+      console.log('[background] AUDIT_VIDEO request for:', msg.videoId);
+      
+      // Call the auditor endpoint
+      const endpoint = `${CONFIG.API_BASE_URL}/audit`;
+      const requestBody = {
+        video_id: msg.videoId,
+        title: msg.title,
+        description: msg.description || '',
+        goal: msg.goal,
+        transcript: msg.transcript || null
+      };
+      
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': CONFIG.API_KEY
+        },
+        body: JSON.stringify(requestBody)
+      })
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          console.log('[background] Auditor analysis received:', data);
+          sendResponse(data);
+        })
+        .catch(err => {
+          console.error('[background] Auditor analysis failed:', err);
+          sendResponse({ error: err.message, analysis: null });
+        });
+      return true; // Keep the message channel open for sendResponse
+    } else if (msg.type === 'COACH_ANALYZE') {
+      console.log('[background] COACH_ANALYZE request for session:', msg.sessionId);
+      
+      // Call the coach endpoint
+      const endpoint = `${CONFIG.API_BASE_URL}/coach/analyze`;
+      const requestBody = {
+        session_id: msg.sessionId,
+        goal: msg.goal,
+        session_data: msg.sessionData
+      };
+      
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': CONFIG.API_KEY
+        },
+        body: JSON.stringify(requestBody)
+      })
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          console.log('[background] Coach analysis received:', data);
+          sendResponse(data);
+        })
+        .catch(err => {
+          console.error('[background] Coach analysis failed:', err);
+          sendResponse({ error: err.message, analysis: null });
+        });
+      return true; // Keep the message channel open for sendResponse
+    } else if (msg.type === 'LIBRARIAN_INDEX') {
+      console.log('[background] LIBRARIAN_INDEX request for video:', msg.videoId);
+      
+      // Call the librarian index endpoint
+      const endpoint = `${CONFIG.API_BASE_URL}/librarian/index`;
+      const requestBody = {
+        video_id: msg.videoId,
+        title: msg.title,
+        transcript: msg.transcript,
+        goal: msg.goal,
+        score: msg.score
+      };
+      
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': CONFIG.API_KEY
+        },
+        body: JSON.stringify(requestBody)
+      })
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          console.log('[background] Librarian index result:', data);
+          sendResponse({ success: true, data: data });
+        })
+        .catch(err => {
+          console.error('[background] Librarian index failed:', err);
+          sendResponse({ success: false, error: err.message });
+        });
+      return true; // Keep the message channel open for sendResponse
+    } else if (msg.type === 'LIBRARIAN_SEARCH') {
+      console.log('[background] LIBRARIAN_SEARCH request:', msg.query);
+      
+      // Call the librarian search endpoint
+      const endpoint = `${CONFIG.API_BASE_URL}/librarian/search`;
+      const requestBody = {
+        query: msg.query,
+        n_results: msg.n_results || 5
+      };
+      
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': CONFIG.API_KEY
+        },
+        body: JSON.stringify(requestBody)
+      })
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          console.log('[background] Librarian search results:', data);
+          sendResponse(data);
+        })
+        .catch(err => {
+          console.error('[background] Librarian search failed:', err);
+          sendResponse({ error: err.message, search_results: null });
         });
       return true; // Keep the message channel open for sendResponse
     }

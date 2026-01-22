@@ -1,6 +1,6 @@
 // content.js
 console.log('[content.js] injected - LOCAL DEVELOPMENT MODE');
-console.log('[content.js] API Base URL:', 'http://localhost:8080');
+console.log('[content.js] API Base URL:', 'https://yt-scorer-api-933573987016.us-central1.run.app');
 
 let sessionActive = false;
 let userGoal      = '';
@@ -415,6 +415,9 @@ async function tryScore() {
         const arr = d.watchedScores || [];
         arr.push(currentScore);
         chrome.storage.local.set({ watchedScores: arr, lastVideoId, currentScore });
+        
+        // Track for Coach Agent
+        trackVideoForCoach(vid, title || 'Unknown Video', currentScore);
       });
 
     }).catch(e => {
@@ -453,3 +456,362 @@ async function tryScore() {
 
 const timerId = setInterval(tryScore, 1000);
 window.addEventListener('unload', () => clearInterval(timerId));
+
+// ===== TRANSCRIPT SCRAPER: Extract from YouTube's Native UI =====
+
+/**
+ * Scrapes transcript from YouTube's native transcript panel
+ * More reliable than API - works for any video with transcripts enabled
+ */
+async function scrapeTranscriptFromYouTube() {
+  console.log('[Transcript] Attempting to scrape transcript from YouTube UI...');
+  
+  try {
+    // Step 1: Find and click the "Show transcript" button
+    // YouTube's button is in the description area
+    const transcriptButtons = [
+      ...document.querySelectorAll('button[aria-label*="transcript" i]'),
+      ...document.querySelectorAll('yt-button-shape[aria-label*="transcript" i]'),
+      ...document.querySelectorAll('[class*="transcript"] button'),
+    ];
+    
+    let transcriptButton = null;
+    for (const btn of transcriptButtons) {
+      const text = btn.textContent.toLowerCase();
+      const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+      if (text.includes('transcript') || text.includes('show transcript') || 
+          ariaLabel.includes('transcript') || ariaLabel.includes('show transcript')) {
+        transcriptButton = btn;
+        break;
+      }
+    }
+    
+    if (!transcriptButton) {
+      console.warn('[Transcript] Show transcript button not found - transcript may not be available');
+      return {
+        success: false,
+        error: 'Transcript button not found. This video may not have transcripts available.',
+        transcript: null
+      };
+    }
+    
+    // Click the button to open transcript panel
+    transcriptButton.click();
+    console.log('[Transcript] Clicked show transcript button');
+    
+    // Step 2: Wait for transcript panel to load
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // Step 3: Find transcript panel and extract text
+    const transcriptPanel = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]');
+    
+    if (!transcriptPanel) {
+      console.warn('[Transcript] Transcript panel not found after clicking button');
+      return {
+        success: false,
+        error: 'Transcript panel did not load. Please try again.',
+        transcript: null
+      };
+    }
+    
+    // Extract transcript segments
+    const segments = transcriptPanel.querySelectorAll('ytd-transcript-segment-renderer');
+    
+    if (segments.length === 0) {
+      console.warn('[Transcript] No transcript segments found in panel');
+      return {
+        success: false,
+        error: 'Transcript panel is empty.',
+        transcript: null
+      };
+    }
+    
+    // Combine all transcript text
+    let fullTranscript = '';
+    const segmentData = [];
+    
+    segments.forEach(segment => {
+      const textEl = segment.querySelector('.segment-text');
+      const timestampEl = segment.querySelector('.segment-timestamp');
+      
+      if (textEl) {
+        const text = textEl.textContent.trim();
+        const timestamp = timestampEl ? timestampEl.textContent.trim() : '';
+        
+        fullTranscript += text + ' ';
+        segmentData.push({
+          text: text,
+          timestamp: timestamp
+        });
+      }
+    });
+    
+    fullTranscript = fullTranscript.trim();
+    
+    console.log(`[Transcript] Successfully scraped ${segments.length} segments (${fullTranscript.length} chars)`);
+    
+    // Step 4: Close the transcript panel (optional - keep it open if user wants)
+    // transcriptButton.click(); // Uncomment to auto-close
+    
+    return {
+      success: true,
+      transcript: fullTranscript,
+      segments: segmentData,
+      segmentCount: segments.length,
+      charCount: fullTranscript.length,
+      error: null
+    };
+    
+  } catch (error) {
+    console.error('[Transcript] Error scraping transcript:', error);
+    return {
+      success: false,
+      error: `Failed to scrape transcript: ${error.message}`,
+      transcript: null
+    };
+  }
+}
+
+/**
+ * Listen for transcript scraping requests from popup
+ */
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'SCRAPE_TRANSCRIPT') {
+    // Run async scraping
+    scrapeTranscriptFromYouTube().then(result => {
+      sendResponse(result);
+    });
+    return true; // Keep channel open for async response
+  }
+});
+
+// ===== COACH AGENT: Proactive Behavior Intervention =====
+
+let coachCheckInterval = null;
+let sessionVideosWatched = [];
+
+function startCoachMonitoring() {
+  if (coachCheckInterval) return; // Already running
+  
+  console.log('[Coach] Starting proactive monitoring');
+  
+  // Check every 2 minutes for behavioral patterns
+  coachCheckInterval = setInterval(() => {
+    if (sessionActive && sessionVideosWatched.length >= 3) {
+      requestCoachAnalysis();
+    }
+  }, 120000); // 2 minutes
+}
+
+function stopCoachMonitoring() {
+  if (coachCheckInterval) {
+    clearInterval(coachCheckInterval);
+    coachCheckInterval = null;
+    sessionVideosWatched = [];
+    console.log('[Coach] Stopped monitoring');
+  }
+}
+
+function trackVideoForCoach(videoId, title, score) {
+  const videoData = {
+    video_id: videoId,
+    title: title,
+    score: score,
+    timestamp: new Date().toISOString()
+  };
+  
+  sessionVideosWatched.push(videoData);
+  
+  // Keep only last 15 videos
+  if (sessionVideosWatched.length > 15) {
+    sessionVideosWatched.shift();
+  }
+}
+
+async function requestCoachAnalysis() {
+  if (!sessionActive || sessionVideosWatched.length === 0) return;
+  
+  console.log('[Coach] Requesting analysis with', sessionVideosWatched.length, 'videos');
+  
+  chrome.storage.local.get(['goal'], (prefs) => {
+    const goal = prefs.goal || userGoal;
+    if (!goal) return;
+    
+    const sessionId = `session_${Date.now()}`;
+    
+    chrome.runtime.sendMessage({
+      type: 'COACH_ANALYZE',
+      sessionId: sessionId,
+      goal: goal,
+      sessionData: sessionVideosWatched
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('[Coach] Error:', chrome.runtime.lastError);
+        return;
+      }
+      
+      if (response && response.analysis && response.analysis.intervention_needed) {
+        showCoachNotification(response.analysis);
+      }
+    });
+  });
+}
+
+function showCoachNotification(analysis) {
+  // Remove existing notification if present
+  const existing = document.getElementById('tubefocus-coach-notification');
+  if (existing) existing.remove();
+  
+  const notification = document.createElement('div');
+  notification.id = 'tubefocus-coach-notification';
+  notification.className = 'tubefocus-coach-notification';
+  notification.style.cssText = `
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    max-width: 350px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    z-index: 10001;
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+    animation: slideIn 0.4s ease-out;
+  `;
+  
+  // Icon based on pattern
+  const patternIcons = {
+    'doom_scrolling': '⚠️',
+    'rabbit_hole': '🌀',
+    'planning_paralysis': '🤔',
+    'binge_watching': '📺',
+    'on_track': '✅'
+  };
+  
+  const icon = patternIcons[analysis.pattern_detected] || '💡';
+  
+  notification.innerHTML = `
+    <style>
+      @keyframes slideIn {
+        from {
+          transform: translateX(400px);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      .tubefocus-coach-notification button {
+        margin: 8px 8px 0 0;
+        padding: 8px 16px;
+        border: none;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 13px;
+        transition: all 0.2s;
+      }
+      .tubefocus-coach-notification button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      }
+      .coach-action {
+        background: white;
+        color: #667eea;
+      }
+      .coach-dismiss {
+        background: rgba(255,255,255,0.2);
+        color: white;
+      }
+    </style>
+    <div style="display: flex; align-items: center; margin-bottom: 12px;">
+      <span style="font-size: 24px; margin-right: 12px;">${icon}</span>
+      <div>
+        <div style="font-weight: bold; font-size: 15px;">Coach TubeFocus</div>
+        <div style="font-size: 11px; opacity: 0.9;">${analysis.pattern_detected.replace('_', ' ').toUpperCase()}</div>
+      </div>
+    </div>
+    <div class="coach-message" style="margin-bottom: 12px; line-height: 1.4; font-size: 14px;">
+      ${analysis.message}
+    </div>
+    <div>
+      <button class="coach-action">${getActionButtonText(analysis.suggested_action)}</button>
+      <button class="coach-dismiss">Later</button>
+    </div>
+  `;
+  
+  document.body.appendChild(notification);
+  
+  // Handle action button
+  notification.querySelector('.coach-action').addEventListener('click', () => {
+    handleCoachAction(analysis.suggested_action);
+    notification.remove();
+  });
+  
+  // Handle dismiss button
+  notification.querySelector('.coach-dismiss').addEventListener('click', () => {
+    notification.remove();
+  });
+  
+  // Auto-dismiss after 15 seconds
+  setTimeout(() => {
+    if (notification.parentNode) {
+      notification.style.animation = 'slideIn 0.4s ease-out reverse';
+      setTimeout(() => notification.remove(), 400);
+    }
+  }, 15000);
+}
+
+function getActionButtonText(action) {
+  const actionTexts = {
+    'take_break': 'Take a Break',
+    'refocus': 'Refocus Now',
+    'bookmark_for_later': 'Bookmark These',
+    'continue': 'Keep Going',
+    'start_practicing': 'Start Practicing'
+  };
+  return actionTexts[action] || 'OK';
+}
+
+function handleCoachAction(action) {
+  console.log('[Coach] User action:', action);
+  
+  switch(action) {
+    case 'refocus':
+      // Clear current session and show popup
+      chrome.runtime.sendMessage({ type: 'SHOW_POPUP' });
+      break;
+    case 'take_break':
+      // Pause session temporarily
+      chrome.runtime.sendMessage({ type: 'PAUSE_SESSION' });
+      break;
+    case 'start_practicing':
+      // Suggestion to close YouTube
+      if (confirm('Ready to practice what you learned? Close YouTube and start building!')) {
+        window.close();
+      }
+      break;
+    default:
+      console.log('[Coach] Action acknowledged');
+  }
+}
+
+// Listen for session start/stop to manage coach monitoring
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.sessionActive) {
+    if (changes.sessionActive.newValue) {
+      startCoachMonitoring();
+    } else {
+      stopCoachMonitoring();
+    }
+  }
+});
+
+// Initialize coach monitoring if session is active
+chrome.storage.local.get(['sessionActive'], (prefs) => {
+  if (prefs.sessionActive) {
+    startCoachMonitoring();
+  }
+});

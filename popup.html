@@ -27,6 +27,7 @@
     <nav class="tabs">
       <button data-tab="setup"  class="active">Setup</button>
       <button data-tab="current">Current</button>
+      <button data-tab="history">History</button>
       <button data-tab="summary">Summary</button>
     </nav>
 
@@ -87,8 +88,82 @@
 
     <!-- Current -->
     <section id="current">
-      <strong>Current Video Score (from session):</strong>
-      <div id="scoreDisplay">–</div>
+      <div class="stats-container">
+        <h3>Session Stats</h3>
+        <div class="stat-row">
+          <span class="stat-label">Videos Watched:</span>
+          <span id="videosWatched" class="stat-value">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Average Score:</span>
+          <span id="averageScore" class="stat-value">–</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Current Video:</span>
+          <span id="currentScore" class="stat-value">–</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Session Status:</span>
+          <span id="sessionStatus" class="stat-value status-indicator">●</span>
+        </div>
+      </div>
+      
+      <button id="refocusButton" class="action refocus-btn" style="margin-top: 16px;">
+        <span>🎯 Refocus Session</span>
+      </button>
+      <p style="font-size: 0.85em; color: #999; margin-top: 8px; text-align: center;">
+        Feeling distracted? Click to get back on track!
+      </p>
+      
+      <!-- Save Video to Library -->
+      <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+        <button id="saveVideoButton" class="action" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+          <span>📚 Save Video to Library</span>
+        </button>
+        <p style="font-size: 0.85em; color: #999; margin-top: 8px; text-align: center;">
+          Extract transcript and save for later search
+        </p>
+        <div id="saveVideoStatus" style="font-size: 0.8em; text-align: center; margin-top: 8px; color: #999;"></div>
+      </div>
+    </section>
+
+    <!-- History -->
+    <section id="history">
+      <div class="history-container">
+        <h3>📚 Video Library</h3>
+        <p style="font-size: 0.85em; color: #999; margin-bottom: 12px;">
+          Search through your watched videos
+        </p>
+        
+        <div class="search-box">
+          <input 
+            type="text" 
+            id="historySearch" 
+            placeholder="Search for topics, concepts..." 
+            style="width: 100%; padding: 8px; border-radius: 4px; border: 2px solid var(--border); background: var(--panel); color: var(--text); font-size: 13px;"
+          />
+          <button id="searchButton" class="action" style="margin-top: 8px; width: 100%;">
+            🔍 Search History
+          </button>
+        </div>
+        
+        <div id="searchResults" style="margin-top: 16px;">
+          <div style="text-align: center; color: #999; font-size: 0.9em;">
+            Enter a search query to find videos
+          </div>
+        </div>
+        
+        <div id="librarianStats" style="margin-top: 16px; padding: 12px; background: var(--panel); border-radius: 6px; border: 1px solid var(--border); font-size: 0.85em;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span>Indexed Videos:</span>
+            <span id="indexedCount">—</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span>Total Chunks:</span>
+            <span id="chunksCount">—</span>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- Summary -->

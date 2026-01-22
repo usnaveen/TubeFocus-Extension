@@ -5,13 +5,24 @@ const goalInput      = document.getElementById('goalInput');
 const sessionDurationInput = document.getElementById('sessionDuration');
 const startBtn       = document.getElementById('startSession');
 const stopBtn        = document.getElementById('stopSession');
-const scoreDisplay   = document.getElementById('scoreDisplay');
+// const scoreDisplay   = document.getElementById('scoreDisplay'); // Removed
 const summaryMessage = document.getElementById('summaryMessage');
 const chartCanvas    = document.getElementById('scoreChart').getContext('2d');
+
+// Coach stats elements
+const videosWatchedEl = document.getElementById('videosWatched');
+const averageScoreEl = document.getElementById('averageScore');
+const currentScoreEl = document.getElementById('currentScore');
+const sessionStatusEl = document.getElementById('sessionStatus');
+const refocusButton = document.getElementById('refocusButton');
 const scoreModeBtn = document.getElementById('scoreModeBtn');
 const scoreModeText = document.getElementById('scoreModeText');
 const dropdownContainer = document.querySelector('.dropdown-container');
 const dropdownMenu = document.getElementById('scoreModeDropdown');
+
+// Save video button
+const saveVideoButton = document.getElementById('saveVideoButton');
+const saveVideoStatus = document.getElementById('saveVideoStatus');
 
 const toggleOnBtn    = document.getElementById('toggleOn');
 const toggleOffBtn   = document.getElementById('toggleOff');
@@ -211,7 +222,7 @@ function updateUI(state) {
 
   getCurrentVideoId(videoId => {
     if (!videoId) {
-      scoreDisplay.textContent = '–';
+      if (currentScoreEl) currentScoreEl.textContent = '–';
       return;
     }
     chrome.storage.local.get(['lastVideoId', 'currentScore'], s => {
@@ -219,11 +230,207 @@ function updateUI(state) {
         // Handle both decimal (0.52) and percentage (52) formats
         const score = s.currentScore;
         const percentage = score > 1 ? score : (score * 100);
-        scoreDisplay.textContent = percentage.toFixed(1) + '%';
+        if (currentScoreEl) currentScoreEl.textContent = percentage.toFixed(1) + '%';
       } else {
-        scoreDisplay.textContent = '–';
+        if (currentScoreEl) currentScoreEl.textContent = '–';
       }
     });
+  });
+  
+  // Update session stats
+  updateSessionStats(state);
+}
+
+// --- Update Session Stats (Coach) ---
+function updateSessionStats(prefs) {
+  const watchedScores = prefs.watchedScores || [];
+  const sessionActive = prefs.sessionActive || false;
+  
+  // Update video count
+  videosWatchedEl.textContent = watchedScores.length;
+  
+  // Update average score
+  if (watchedScores.length > 0) {
+    const avg = watchedScores.reduce((a, b) => a + b, 0) / watchedScores.length;
+    // Handle both decimal and percentage formats
+    const avgPercentage = avg > 1 ? avg : (avg * 100);
+    averageScoreEl.textContent = avgPercentage.toFixed(1) + '%';
+    
+    // Color code based on average
+    if (avgPercentage >= 70) {
+      averageScoreEl.style.color = '#4ade80';
+    } else if (avgPercentage >= 50) {
+      averageScoreEl.style.color = '#fbbf24';
+    } else {
+      averageScoreEl.style.color = '#f87171';
+    }
+  } else {
+    averageScoreEl.textContent = '–';
+    averageScoreEl.style.color = '';
+  }
+  
+  // Update current score
+  if (prefs.currentScore != null) {
+    const score = prefs.currentScore;
+    const percentage = score > 1 ? score : (score * 100);
+    currentScoreEl.textContent = percentage.toFixed(1) + '%';
+  } else {
+    currentScoreEl.textContent = '–';
+  }
+  
+  // Update session status
+  if (sessionActive) {
+    sessionStatusEl.classList.add('active');
+    sessionStatusEl.classList.remove('inactive');
+    sessionStatusEl.title = 'Session Active';
+  } else {
+    sessionStatusEl.classList.add('inactive');
+    sessionStatusEl.classList.remove('active');
+    sessionStatusEl.title = 'No Active Session';
+  }
+}
+
+// --- Refocus Button Handler ---
+if (refocusButton) {
+  refocusButton.addEventListener('click', () => {
+    // Switch to setup tab
+    tabs.forEach(t => t.classList.remove('active'));
+    sections.forEach(s => s.classList.remove('active'));
+    document.querySelector('[data-tab="setup"]').classList.add('active');
+    document.getElementById('setup').classList.add('active');
+    
+    // Focus on goal input
+    goalInput.focus();
+    goalInput.select();
+    
+    // Show encouragement message
+    const encouragement = [
+      "Let's refocus! What's your next goal?",
+      "Time to reset! What do you want to learn?",
+      "Fresh start! Define your new objective.",
+      "Back on track! What are we learning today?"
+    ];
+    const msg = encouragement[Math.floor(Math.random() * encouragement.length)];
+    goalInput.placeholder = msg;
+    
+    setTimeout(() => {
+      goalInput.placeholder = "e.g. Learn React component lifecycle";
+    }, 3000);
+  });
+}
+
+// --- Save Video to Library Handler ---
+if (saveVideoButton) {
+  saveVideoButton.addEventListener('click', async () => {
+    console.log('[Save Video] Button clicked');
+    
+    // Disable button during processing
+    saveVideoButton.disabled = true;
+    saveVideoStatus.textContent = '⏳ Extracting transcript...';
+    saveVideoStatus.style.color = '#3b82f6';
+    
+    try {
+      // Get current tab (should be YouTube)
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      if (!tab.url || !tab.url.includes('youtube.com/watch')) {
+        saveVideoStatus.textContent = '❌ Not on a YouTube video page';
+        saveVideoStatus.style.color = '#ef4444';
+        setTimeout(() => {
+          saveVideoStatus.textContent = '';
+          saveVideoButton.disabled = false;
+        }, 3000);
+        return;
+      }
+      
+      // Extract video ID from URL
+      const videoIdMatch = tab.url.match(/[?&]v=([^&]+)/);
+      if (!videoIdMatch) {
+        saveVideoStatus.textContent = '❌ Could not extract video ID';
+        saveVideoStatus.style.color = '#ef4444';
+        setTimeout(() => {
+          saveVideoStatus.textContent = '';
+          saveVideoButton.disabled = false;
+        }, 3000);
+        return;
+      }
+      
+      const videoId = videoIdMatch[1];
+      console.log('[Save Video] Video ID:', videoId);
+      
+      // Request transcript scraping from content script
+      chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_TRANSCRIPT' }, async (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Save Video] Error:', chrome.runtime.lastError);
+          saveVideoStatus.textContent = '❌ Error communicating with page';
+          saveVideoStatus.style.color = '#ef4444';
+          setTimeout(() => {
+            saveVideoStatus.textContent = '';
+            saveVideoButton.disabled = false;
+          }, 3000);
+          return;
+        }
+        
+        if (!response || !response.success) {
+          saveVideoStatus.textContent = `❌ ${response?.error || 'Failed to extract transcript'}`;
+          saveVideoStatus.style.color = '#ef4444';
+          setTimeout(() => {
+            saveVideoStatus.textContent = '';
+            saveVideoButton.disabled = false;
+          }, 5000);
+          return;
+        }
+        
+        console.log('[Save Video] Transcript scraped:', response.charCount, 'chars');
+        saveVideoStatus.textContent = `✓ Extracted ${response.segmentCount} segments. Saving...`;
+        
+        // Get current goal
+        chrome.storage.local.get(['goal', 'currentScore'], async (prefs) => {
+          const goal = prefs.goal || 'General learning';
+          const score = prefs.currentScore || 50;
+          
+          // Send to Librarian for indexing
+          chrome.runtime.sendMessage({
+            type: 'LIBRARIAN_INDEX',
+            videoId: videoId,
+            title: tab.title.replace(' - YouTube', ''),
+            transcript: response.transcript,
+            goal: goal,
+            score: score
+          }, (indexResponse) => {
+            if (chrome.runtime.lastError) {
+              console.error('[Save Video] Index error:', chrome.runtime.lastError);
+              saveVideoStatus.textContent = '❌ Failed to save to library';
+              saveVideoStatus.style.color = '#ef4444';
+            } else if (indexResponse && indexResponse.success) {
+              saveVideoStatus.textContent = '✅ Saved to library!';
+              saveVideoStatus.style.color = '#10b981';
+              
+              // Refresh librarian stats
+              loadLibrarianStats();
+            } else {
+              saveVideoStatus.textContent = '❌ Failed to index video';
+              saveVideoStatus.style.color = '#ef4444';
+            }
+            
+            // Re-enable button
+            setTimeout(() => {
+              saveVideoStatus.textContent = '';
+              saveVideoButton.disabled = false;
+            }, 3000);
+          });
+        });
+      });
+      
+    } catch (error) {
+      console.error('[Save Video] Error:', error);
+      saveVideoStatus.textContent = '❌ Unexpected error';
+      saveVideoStatus.style.color = '#ef4444';
+      setTimeout(() => {
+        saveVideoStatus.textContent = '';
+        saveVideoButton.disabled = false;
+      }, 3000);
+    }
   });
 }
 
@@ -426,17 +633,19 @@ function selectScoringMode(type, mode) {
         advancedMode: currentAdvancedMode
       };
       sendToContent({ type: 'SCORE_MODE_CHANGED', mode: modeData });
-      scoreDisplay.textContent = 'Scoring mode changed. Score updating...';
-      scoreDisplay.classList.remove('error');
+      if (currentScoreEl) {
+        currentScoreEl.textContent = 'Scoring mode changed. Score updating...';
+        currentScoreEl.classList.remove('error');
+      }
       setTimeout(() => {
         chrome.storage.local.get(['lastVideoId','currentScore'], s => {
           if (s.currentScore != null) {
             // Handle both decimal (0.52) and percentage (52) formats
             const score = s.currentScore;
             const percentage = score > 1 ? score : (score * 100);
-            scoreDisplay.textContent = percentage.toFixed(1) + '%';
+            if (currentScoreEl) currentScoreEl.textContent = percentage.toFixed(1) + '%';
           } else {
-            scoreDisplay.textContent = '\u2013';
+            if (currentScoreEl) currentScoreEl.textContent = '\u2013';
           }
         });
       }, 2000);
@@ -517,7 +726,12 @@ chrome.runtime.onMessage.addListener(msg => {
     // Handle both decimal (0.52) and percentage (52) formats
     const score = msg.score;
     const percentage = score > 1 ? score : (score * 100);
-    scoreDisplay.textContent = percentage.toFixed(1) + '%';
+    if (currentScoreEl) currentScoreEl.textContent = percentage.toFixed(1) + '%';
+    
+    // Update coach stats
+    chrome.storage.local.get(['watchedScores', 'sessionActive', 'currentScore'], (prefs) => {
+      updateSessionStats(prefs);
+    });
     getCurrentVideoId(videoId => {
       if (!videoId) return;
       chrome.storage.local.set({ currentScore: msg.score, lastVideoId: videoId });
@@ -533,8 +747,10 @@ chrome.runtime.onMessage.addListener(msg => {
       }, 100);
     }
   } else if (msg.type === 'ERROR') {
-    scoreDisplay.textContent = msg.error || 'An error occurred.';
-    scoreDisplay.classList.add('error');
+    if (currentScoreEl) {
+      currentScoreEl.textContent = msg.error || 'An error occurred.';
+      currentScoreEl.classList.add('error');
+    }
   }
 });
 
@@ -582,5 +798,113 @@ function renderSummary() {
     console.log('Chart scores (normalized to 0-100):', chartScores);
     initChart(scores.map((_,i)=>i+1), chartScores);
   });
+}
+
+// ===== LIBRARIAN: History Search =====
+
+const historySearchInput = document.getElementById('historySearch');
+const searchButton = document.getElementById('searchButton');
+const searchResults = document.getElementById('searchResults');
+const indexedCountEl = document.getElementById('indexedCount');
+const chunksCountEl = document.getElementById('chunksCount');
+
+// Load librarian stats when History tab is opened
+const historyTab = document.querySelector('[data-tab="history"]');
+if (historyTab) {
+  historyTab.addEventListener('click', loadLibrarianStats);
+}
+
+function loadLibrarianStats() {
+  // This is a placeholder - in production, this would call the backend
+  // For now, show placeholder text
+  indexedCountEl.textContent = 'N/A (Backend needed)';
+  chunksCountEl.textContent = 'N/A (Backend needed)';
+}
+
+if (searchButton && historySearchInput) {
+  searchButton.addEventListener('click', performSearch);
+  historySearchInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      performSearch();
+    }
+  });
+}
+
+function performSearch() {
+  const query = historySearchInput.value.trim();
+  
+  if (!query) {
+    searchResults.innerHTML = `
+      <div style="text-align: center; color: #f87171; font-size: 0.9em;">
+        Please enter a search query
+      </div>
+    `;
+    return;
+  }
+  
+  searchResults.innerHTML = `
+    <div style="text-align: center; color: #999; font-size: 0.9em;">
+      Searching for "${query}"...
+    </div>
+  `;
+  
+  // Call backend search endpoint
+  chrome.runtime.sendMessage({
+    type: 'LIBRARIAN_SEARCH',
+    query: query
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Librarian] Error:', chrome.runtime.lastError);
+      searchResults.innerHTML = `
+        <div style="text-align: center; color: #f87171; font-size: 0.9em;">
+          Search failed. Backend may not be running.
+        </div>
+      `;
+      return;
+    }
+    
+    displaySearchResults(response);
+  });
+}
+
+function displaySearchResults(response) {
+  if (!response || !response.search_results) {
+    searchResults.innerHTML = `
+      <div style="text-align: center; color: #f87171; font-size: 0.9em;">
+        No results found
+      </div>
+    `;
+    return;
+  }
+  
+  const results = response.search_results.results || [];
+  
+  if (results.length === 0) {
+    searchResults.innerHTML = `
+      <div style="text-align: center; color: #999; font-size: 0.9em;">
+        No videos found matching your query.<br/>
+        <span style="font-size: 0.8em;">Videos are indexed automatically as you watch them.</span>
+      </div>
+    `;
+    return;
+  }
+  
+  let html = `<div style="font-size: 0.85em; color: #999; margin-bottom: 8px;">Found ${results.length} results:</div>`;
+  
+  results.forEach(result => {
+    const scoreColor = result.score >= 70 ? '#4ade80' : result.score >= 50 ? '#fbbf24' : '#f87171';
+    html += `
+      <div class="search-result-item">
+        <div class="search-result-title">${result.title}</div>
+        <div class="search-result-snippet">${result.snippet}</div>
+        <div class="search-result-meta">
+          <span>Goal: ${result.goal}</span>
+          <span class="search-result-score" style="color: ${scoreColor};">${result.score}%</span>
+        </div>
+      </div>
+    `;
+  });
+  
+  searchResults.innerHTML = html;
 }
 
