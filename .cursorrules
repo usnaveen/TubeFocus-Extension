@@ -1,0 +1,725 @@
+# Chrome Extension - Cursor AI Rules
+
+## Technology Stack
+- **Platform**: Chrome Extensions Manifest V3
+- **Languages**: JavaScript (ES6+), HTML5, CSS3
+- **UI Library**: Vanilla JS (no framework overhead)
+- **Charting**: Chart.js
+- **Backend Communication**: REST API calls
+
+## JavaScript Code Style
+
+### Modern ES6+ Patterns
+```javascript
+// Use const/let, never var
+const API_URL = 'https://api.tubefocus.com';
+let userScore = 0;
+
+// Arrow functions for callbacks
+videos.forEach(video => processVideo(video));
+
+// Destructuring
+const { videoId, title, channel } = videoData;
+
+// Template literals
+const message = `Score: ${score}/100`;
+
+// Async/await over promises
+async function fetchScore(videoId) {
+    try {
+        const response = await fetch(`${API_URL}/score/${videoId}`);
+        return await response.json();
+    } catch (error) {
+        console.error('Failed to fetch score:', error);
+        return null;
+    }
+}
+```
+
+### JSDoc Documentation
+```javascript
+/**
+ * Calculate productivity score for a YouTube video
+ * @param {string} videoId - YouTube video identifier
+ * @param {Object} options - Scoring options
+ * @param {boolean} options.useCache - Whether to use cached results
+ * @returns {Promise<number>} Productivity score (0-100)
+ * @throws {Error} If video ID is invalid
+ */
+async function calculateScore(videoId, options = {}) {
+    // Implementation
+}
+```
+
+## Chrome Extension Architecture
+
+### File Structure & Responsibilities
+
+#### manifest.json
+- Keep permissions minimal (security)
+- Use Manifest V3 (required)
+- Specify content security policy
+- Document why each permission is needed
+
+#### background.js (Service Worker)
+```javascript
+// Background script for event handling
+// - Manages extension lifecycle
+// - Handles cross-tab communication
+// - Caches API responses
+// - Manages alarms/timers
+
+chrome.runtime.onInstalled.addListener((details) => {
+    if (details.reason === 'install') {
+        // First-time setup
+    }
+});
+```
+
+#### content.js (Content Script)
+```javascript
+// Injected into YouTube pages
+// - DOM manipulation
+// - Video detection
+// - Score display
+// - User interaction capture
+
+// Isolate from page scripts
+(function() {
+    'use strict';
+    
+    // Your content script code
+})();
+```
+
+#### popup.js (Extension Popup)
+```javascript
+// Popup UI logic
+// - Display user statistics
+// - Settings management
+// - Quick actions
+// - Chart visualization
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadUserData();
+    initializeCharts();
+});
+```
+
+### Message Passing
+```javascript
+// Content script -> Background
+chrome.runtime.sendMessage({
+    action: 'getScore',
+    videoId: currentVideoId
+}, (response) => {
+    if (chrome.runtime.lastError) {
+        console.error(chrome.runtime.lastError);
+        return;
+    }
+    displayScore(response.score);
+});
+
+// Background listener
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'getScore') {
+        fetchScoreFromAPI(request.videoId)
+            .then(sendResponse)
+            .catch(error => sendResponse({ error: error.message }));
+        return true; // Async response
+    }
+});
+```
+
+## API Integration
+
+### Backend Communication
+```javascript
+class TubeFocusAPI {
+    constructor(baseURL) {
+        this.baseURL = baseURL;
+        this.cache = new Map();
+    }
+    
+    async request(endpoint, options = {}) {
+        const url = `${this.baseURL}${endpoint}`;
+        const config = {
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            },
+            ...options
+        };
+        
+        try {
+            const response = await fetch(url, config);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            return await response.json();
+        } catch (error) {
+            console.error(`API request failed: ${error.message}`);
+            throw error;
+        }
+    }
+    
+    async getVideoScore(videoId) {
+        // Check cache first
+        if (this.cache.has(videoId)) {
+            const cached = this.cache.get(videoId);
+            if (Date.now() - cached.timestamp < 3600000) { // 1 hour
+                return cached.data;
+            }
+        }
+        
+        const data = await this.request(`/api/v1/score/${videoId}`);
+        this.cache.set(videoId, { data, timestamp: Date.now() });
+        return data;
+    }
+}
+```
+
+### Error Handling
+```javascript
+// Always handle network failures gracefully
+async function fetchWithRetry(url, options = {}, maxRetries = 3) {
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            return await fetch(url, options);
+        } catch (error) {
+            if (i === maxRetries - 1) throw error;
+            await sleep(Math.pow(2, i) * 1000); // Exponential backoff
+        }
+    }
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+```
+
+## DOM Manipulation Best Practices
+
+### YouTube Page Integration
+```javascript
+// Wait for YouTube elements to load
+function waitForElement(selector, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        const element = document.querySelector(selector);
+        if (element) return resolve(element);
+        
+        const observer = new MutationObserver(() => {
+            const element = document.querySelector(selector);
+            if (element) {
+                observer.disconnect();
+                resolve(element);
+            }
+        });
+        
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        
+        setTimeout(() => {
+            observer.disconnect();
+            reject(new Error('Element not found'));
+        }, timeout);
+    });
+}
+
+// Extract video ID from URL
+function getVideoId() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('v');
+}
+
+// Inject score UI
+function injectScoreDisplay(score) {
+    const container = document.querySelector('#above-the-fold');
+    if (!container) return;
+    
+    const scoreElement = document.createElement('div');
+    scoreElement.id = 'tubefocus-score';
+    scoreElement.className = 'tubefocus-score-container';
+    scoreElement.innerHTML = `
+        <div class="score-badge">
+            <span class="score-value">${score}</span>
+            <span class="score-label">Productivity Score</span>
+        </div>
+    `;
+    
+    container.appendChild(scoreElement);
+}
+```
+
+### Clean Up Resources
+```javascript
+// Remove listeners when done
+const controller = new AbortController();
+
+document.addEventListener('click', handleClick, { 
+    signal: controller.signal 
+});
+
+// Later: controller.abort();
+
+// Clean up on navigation
+window.addEventListener('beforeunload', () => {
+    // Clean up resources
+    controller.abort();
+    clearCaches();
+});
+```
+
+## Storage Management
+
+### Chrome Storage API
+```javascript
+// Save settings
+async function saveSettings(settings) {
+    await chrome.storage.sync.set({ settings });
+}
+
+// Load settings with defaults
+async function loadSettings() {
+    const defaults = {
+        enabled: true,
+        scoreThreshold: 70,
+        showNotifications: true
+    };
+    
+    const { settings } = await chrome.storage.sync.get({ settings: defaults });
+    return settings;
+}
+
+// Listen for storage changes
+chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'sync' && changes.settings) {
+        updateUIWithNewSettings(changes.settings.newValue);
+    }
+});
+```
+
+## Performance Optimization
+
+### Lazy Loading
+```javascript
+// Load heavy libraries only when needed
+let chartJS = null;
+
+async function loadChartJS() {
+    if (!chartJS) {
+        chartJS = await import('./libs/chart.min.js');
+    }
+    return chartJS;
+}
+```
+
+### Debouncing & Throttling
+```javascript
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func(...args), wait);
+    };
+}
+
+function throttle(func, limit) {
+    let inThrottle;
+    return function(...args) {
+        if (!inThrottle) {
+            func(...args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    };
+}
+
+// Usage
+const handleScroll = debounce(() => {
+    // Handle scroll event
+}, 300);
+
+window.addEventListener('scroll', handleScroll);
+```
+
+### Efficient DOM Updates
+```javascript
+// Batch DOM updates
+function updateVideoList(videos) {
+    const fragment = document.createDocumentFragment();
+    
+    videos.forEach(video => {
+        const element = createVideoElement(video);
+        fragment.appendChild(element);
+    });
+    
+    document.querySelector('#video-list').appendChild(fragment);
+}
+```
+
+## UI/UX Best Practices
+
+### Loading States
+```javascript
+function showLoading(element) {
+    element.classList.add('loading');
+    element.innerHTML = '<div class="spinner"></div>';
+}
+
+function hideLoading(element, content) {
+    element.classList.remove('loading');
+    element.innerHTML = content;
+}
+```
+
+### Error Messages
+```javascript
+function showError(message, duration = 5000) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'tubefocus-error';
+    errorDiv.textContent = message;
+    
+    document.body.appendChild(errorDiv);
+    
+    setTimeout(() => {
+        errorDiv.classList.add('fade-out');
+        setTimeout(() => errorDiv.remove(), 300);
+    }, duration);
+}
+```
+
+### Accessibility
+```html
+<!-- Use semantic HTML -->
+<button 
+    aria-label="Show productivity score" 
+    role="button"
+    tabindex="0">
+    Score
+</button>
+
+<!-- Keyboard navigation -->
+<script>
+element.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+        handleClick();
+    }
+});
+</script>
+```
+
+## Security Best Practices
+
+### Content Security Policy
+```json
+// manifest.json
+{
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'"
+    }
+}
+```
+
+### Input Sanitization
+```javascript
+function sanitizeHTML(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Use textContent instead of innerHTML when possible
+element.textContent = userInput; // Safe
+// element.innerHTML = userInput; // Dangerous
+```
+
+### API Key Management
+```javascript
+// Never hardcode API keys in extension code
+// Use environment-specific config files
+// Backend should handle authentication
+
+// config.js (gitignored local dev file)
+const config = {
+    apiUrl: process.env.NODE_ENV === 'production' 
+        ? 'https://api.tubefocus.com'
+        : 'http://localhost:5000'
+};
+```
+
+## Testing Guidelines
+
+### Unit Tests
+```javascript
+// test_local_dev.js
+describe('Score Calculation', () => {
+    it('should return score between 0-100', () => {
+        const score = calculateScore(mockData);
+        expect(score).toBeGreaterThanOrEqual(0);
+        expect(score).toBeLessThanOrEqual(100);
+    });
+});
+```
+
+### Manual Testing Checklist
+- [ ] Test on YouTube homepage
+- [ ] Test on video watch page
+- [ ] Test on channel pages
+- [ ] Test with slow network (throttling)
+- [ ] Test with backend offline
+- [ ] Test extension enable/disable
+- [ ] Test storage quota limits
+- [ ] Test on different screen sizes
+
+## Chart.js Integration
+
+### Initialization
+```javascript
+async function initializeChart(data) {
+    const ctx = document.getElementById('scoreChart').getContext('2d');
+    
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.dates,
+            datasets: [{
+                label: 'Productivity Score',
+                data: data.scores,
+                borderColor: '#4CAF50',
+                backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true },
+                tooltip: { enabled: true }
+            }
+        }
+    });
+}
+```
+
+## Debugging Tips
+
+### Console Logging
+```javascript
+// Use different log levels
+console.debug('Detailed debug info');
+console.log('General information');
+console.warn('Warning message');
+console.error('Error occurred', error);
+
+// Group related logs
+console.group('Video Processing');
+console.log('Video ID:', videoId);
+console.log('Score:', score);
+console.groupEnd();
+```
+
+### Chrome DevTools
+```javascript
+// Debug background script: chrome://extensions > Inspect background page
+// Debug content script: Regular DevTools on YouTube page
+// Debug popup: Right-click popup > Inspect
+
+// Use debugger statement for breakpoints
+if (someCondition) {
+    debugger; // Execution will pause here
+}
+```
+
+## Git Workflow for Extension
+
+### MANDATORY: Feature Branch Workflow
+
+**NEVER work directly on main branch**
+
+#### Branch Creation
+```bash
+# Always create feature branch from main
+git checkout main
+git pull origin main
+git checkout -b feature/your-feature-name
+```
+
+#### Development Cycle with Version Management
+1. Create feature branch
+2. Make changes and test locally  
+3. Update `manifest.json` version if user-facing change
+4. Create changelog if significant change
+5. Commit with conventional message format
+6. Push branch to remote
+7. Create Pull Request for review
+8. Merge to main after approval
+9. Delete feature branch
+
+#### Manifest Version Management
+
+**When to Update Version:**
+- ✅ New features → Minor version (1.0.0 → 1.1.0)
+- ✅ Bug fixes → Patch version (1.0.0 → 1.0.1)
+- ✅ Major changes → Major version (1.0.0 → 2.0.0)
+- ❌ Code refactoring (no user impact) → No change
+- ❌ Documentation only → No change
+
+**Version Format:** `major.minor.patch`
+
+#### Before Committing
+- [ ] Test extension functionality
+- [ ] Update `manifest.json` version (if needed)
+- [ ] Remove debug console.log statements
+- [ ] Verify no hardcoded secrets
+- [ ] Create changelog (if significant change)
+- [ ] Format commit message conventionally
+
+#### Commit Message Format
+```bash
+# Format: type(scope): subject
+git commit -m "feat(ui): add dark mode support
+
+- Added dark mode toggle in popup
+- Updated styles for dark theme
+- Updated manifest version to 1.1.0
+- See changelogs/2026-01-22-dark-mode.md
+
+Closes #45"
+```
+
+**Commit Types:**
+- `feat:` new features
+- `fix:` bug fixes
+- `ui:` UI/UX improvements
+- `refactor:` code refactoring
+- `perf:` performance improvements
+- `security:` security fixes
+- `docs:` documentation
+- `chore:` maintenance
+
+## Changelog Requirements
+
+### Create Changelog For
+- ✅ New features
+- ✅ UI/UX changes
+- ✅ Manifest updates
+- ✅ Permission changes
+- ✅ API integration changes
+- ✅ Performance improvements (>10%)
+- ✅ Security fixes
+- ✅ Chrome Web Store releases
+
+### Changelog Location
+`extension/changelogs/YYYY-MM-DD-brief-description.md`
+
+### Changelog Must Include
+```markdown
+# Feature Name
+
+**Type:** Feature | Fix | UI/UX | Performance | Security
+**Date:** YYYY-MM-DD
+**Author:** Your Name
+**Branch:** feature/branch-name
+**Manifest Version:** X.X.X
+
+## Summary
+Brief description
+
+## Changes Made
+- Change 1
+- Change 2
+
+## User Impact
+- What users will notice
+- New features
+
+## Testing
+- How tested
+- Browser versions
+
+## Screenshots
+[If UI changes]
+```
+
+### Integration with Git
+```bash
+# After creating changelog and updating manifest
+git add manifest.json
+git add changelogs/2026-01-22-feature.md
+git add [other files]
+git commit -m "feat: implement feature
+
+- Updated manifest version to 1.1.0
+- See changelogs/2026-01-22-feature.md"
+```
+
+## Deployment Checklist
+
+Before submitting to Chrome Web Store:
+- [ ] Update version in manifest.json
+- [ ] Create/update changelog
+- [ ] Test on clean Chrome profile
+- [ ] Remove console.log statements (except errors)
+- [ ] Minify CSS/JS (optional)
+- [ ] Optimize images
+- [ ] Update README.md
+- [ ] Test with production backend
+- [ ] Review permissions (minimal required)
+- [ ] Prepare store assets (screenshots, description)
+- [ ] Test on multiple YouTube layouts
+- [ ] Create git tag: `git tag v1.1.0`
+- [ ] Push tag: `git push origin v1.1.0`
+
+## MCP Usage for Extension Development
+
+### Figma MCP
+- Reference UI designs and mockups
+- Ensure visual consistency
+- Extract design tokens (colors, spacing)
+
+### Context7 MCP
+- Look up Chrome Extension API documentation
+- Check best practices
+- Research YouTube DOM structure changes
+
+## Browser Compatibility
+
+### Chrome Version Support
+```json
+// manifest.json
+{
+    "minimum_chrome_version": "88"
+}
+```
+
+### Feature Detection
+```javascript
+// Check for API availability
+if (chrome.storage && chrome.storage.sync) {
+    // Use sync storage
+} else {
+    // Fallback to local storage
+}
+```
+
+## Code Review Checklist (Before PR)
+1. [ ] Message passing correctness
+2. [ ] No memory leaks (listeners, timers cleaned up)
+3. [ ] Error handling completeness
+4. [ ] Performance impact on YouTube minimal
+5. [ ] Security vulnerabilities checked
+6. [ ] User experience polished
+7. [ ] Code documented (JSDoc)
+8. [ ] Manifest permissions justified (minimal)
+9. [ ] Manifest version updated (if needed)
+10. [ ] Changelog created (if significant)
+11. [ ] Conventional commit message
+12. [ ] Branch up to date with main
+13. [ ] No merge conflicts
+14. [ ] Tested on clean Chrome profile
