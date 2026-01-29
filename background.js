@@ -57,16 +57,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'START_SESSION') {
       const endTime = Date.now() + msg.duration * 60 * 1000;
 
-      // Simplified scoring - always use simple mode with title and description
+      // Session data with coach mode
       const storageData = {
         sessionActive: true,
         sessionEndTime: endTime,
         goal: msg.goal,
-        watchedScores: []  // Clear previous session scores when starting new session
+        coachMode: msg.coachMode || 'balanced',
+        coachInstructions: msg.coachInstructions || '',
+        watchedScores: [],  // Clear previous session scores when starting new session
+        totalWatchTime: 0,
+        sessionStartTime: Date.now()
       };
 
       chrome.storage.local.set(storageData, () => {
         chrome.alarms.create('sessionEnd', { delayInMinutes: msg.duration });
+        console.log('[background] Session started with coach mode:', msg.coachMode);
       });
     } else if (msg.type === 'STOP_SESSION') {
       // End session but preserve scores for summary and set flag to show summary
@@ -375,5 +380,73 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ error: err.message, search_results: null });
         });
       return true; // Keep the message channel open for sendResponse
+    } else if (msg.type === 'SAVE_HIGHLIGHT') {
+      console.log('[background] SAVE_HIGHLIGHT request:', msg.highlight.videoId, '@', msg.highlight.timestampFormatted);
+      
+      // Store highlight locally first (for offline access)
+      chrome.storage.local.get(['highlights'], (data) => {
+        const highlights = data.highlights || [];
+        highlights.push(msg.highlight);
+        chrome.storage.local.set({ highlights }, () => {
+          console.log('[background] Highlight saved locally, total:', highlights.length);
+        });
+      });
+      
+      // Also send to backend for indexing (if transcript available)
+      if (msg.highlight.transcript) {
+        const endpoint = `${CONFIG.API_BASE_URL}/librarian/index`;
+        const requestBody = {
+          video_id: `${msg.highlight.videoId}_highlight_${msg.highlight.timestamp}`,
+          title: `[Highlight] ${msg.highlight.videoTitle} @ ${msg.highlight.timestampFormatted}`,
+          transcript: `${msg.highlight.note ? msg.highlight.note + ' --- ' : ''}${msg.highlight.transcript}`,
+          goal: 'highlight',
+          score: 100,
+          metadata: {
+            type: 'highlight',
+            original_video_id: msg.highlight.videoId,
+            timestamp: msg.highlight.timestamp,
+            video_url: msg.highlight.videoUrl,
+            note: msg.highlight.note
+          }
+        };
+        
+        fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': CONFIG.API_KEY
+          },
+          body: JSON.stringify(requestBody)
+        })
+          .then(res => res.json())
+          .then(data => {
+            console.log('[background] Highlight indexed in backend:', data);
+            sendResponse({ success: true, indexed: true });
+          })
+          .catch(err => {
+            console.error('[background] Highlight indexing failed:', err);
+            // Still success since we saved locally
+            sendResponse({ success: true, indexed: false, error: err.message });
+          });
+      } else {
+        // No transcript, just saved locally with note
+        sendResponse({ success: true, indexed: false, reason: 'No transcript available' });
+      }
+      return true;
+    } else if (msg.type === 'WATCH_STATUS_UPDATE') {
+      // Store watch time for coach
+      chrome.storage.local.set({ 
+        totalWatchTime: msg.totalWatchTimeSeconds,
+        lastWatchUpdate: Date.now()
+      });
+      
+      // Optionally notify coach about watch status
+      console.log('[background] Watch status updated:', msg.totalWatchTimeSeconds, 'seconds');
+    } else if (msg.type === 'GET_HIGHLIGHTS') {
+      // Retrieve all saved highlights
+      chrome.storage.local.get(['highlights'], (data) => {
+        sendResponse({ highlights: data.highlights || [] });
+      });
+      return true;
     }
 });

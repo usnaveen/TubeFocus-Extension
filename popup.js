@@ -5,7 +5,6 @@ const goalInput      = document.getElementById('goalInput');
 const sessionDurationInput = document.getElementById('sessionDuration');
 const startBtn       = document.getElementById('startSession');
 const stopBtn        = document.getElementById('stopSession');
-// const scoreDisplay   = document.getElementById('scoreDisplay'); // Removed
 const summaryMessage = document.getElementById('summaryMessage');
 const chartCanvas    = document.getElementById('scoreChart').getContext('2d');
 
@@ -14,15 +13,17 @@ const videosWatchedEl = document.getElementById('videosWatched');
 const averageScoreEl = document.getElementById('averageScore');
 const currentScoreEl = document.getElementById('currentScore');
 const sessionStatusEl = document.getElementById('sessionStatus');
-const refocusButton = document.getElementById('refocusButton');
-const scoreModeBtn = document.getElementById('scoreModeBtn');
-const scoreModeText = document.getElementById('scoreModeText');
-const dropdownContainer = document.querySelector('.dropdown-container');
-const dropdownMenu = document.getElementById('scoreModeDropdown');
+const watchTimeEl = document.getElementById('watchTime');
+const coachMessageEl = document.getElementById('coachMessage');
+const coachTextEl = document.getElementById('coachText');
+const coachModeSelect = document.getElementById('coachMode');
+const customInstructionsContainer = document.getElementById('customInstructionsContainer');
+const coachInstructionsInput = document.getElementById('coachInstructions');
 
-// Save video button
+// Save video and highlight buttons
 const saveVideoButton = document.getElementById('saveVideoButton');
 const saveVideoStatus = document.getElementById('saveVideoStatus');
+const highlightButton = document.getElementById('highlightButton');
 
 const toggleOnBtn    = document.getElementById('toggleOn');
 const toggleOffBtn   = document.getElementById('toggleOff');
@@ -185,16 +186,15 @@ let timerInterval = null;
 
 // --- Centralized UI Update ---
 function updateUI(state) {
-  const { sessionActive, goal, scoreMode, sessionEndTime } = state;
+  const { sessionActive, goal, sessionEndTime, coachMode } = state;
 
   startBtn.disabled = sessionActive;
   stopBtn.disabled = !sessionActive;
   goalInput.value = goal || '';
   
-  // Update scoring mode if provided
-  if (scoreMode) {
-    currentScoringMode = scoreMode;
-    updateScoringModeDisplay();
+  // Update coach mode if provided
+  if (coachMode && coachModeSelect) {
+    coachModeSelect.value = coachMode;
   }
 
   toggleOnBtn.classList.toggle('active', sessionActive);
@@ -290,32 +290,54 @@ function updateSessionStats(prefs) {
   }
 }
 
-// --- Refocus Button Handler ---
-if (refocusButton) {
-  refocusButton.addEventListener('click', () => {
-    // Switch to setup tab
-    tabs.forEach(t => t.classList.remove('active'));
-    sections.forEach(s => s.classList.remove('active'));
-    document.querySelector('[data-tab="setup"]').classList.add('active');
-    document.getElementById('setup').classList.add('active');
+// --- Coach Mode Handler ---
+if (coachModeSelect) {
+  coachModeSelect.addEventListener('change', () => {
+    const mode = coachModeSelect.value;
+    if (mode === 'custom') {
+      customInstructionsContainer.style.display = 'block';
+    } else {
+      customInstructionsContainer.style.display = 'none';
+    }
+    // Save preference
+    chrome.storage.local.set({ coachMode: mode });
+  });
+}
+
+// --- Highlight Button Handler ---
+if (highlightButton) {
+  highlightButton.addEventListener('click', async () => {
+    console.log('[Highlight] Button clicked');
     
-    // Focus on goal input
-    goalInput.focus();
-    goalInput.select();
-    
-    // Show encouragement message
-    const encouragement = [
-      "Let's refocus! What's your next goal?",
-      "Time to reset! What do you want to learn?",
-      "Fresh start! Define your new objective.",
-      "Back on track! What are we learning today?"
-    ];
-    const msg = encouragement[Math.floor(Math.random() * encouragement.length)];
-    goalInput.placeholder = msg;
-    
-    setTimeout(() => {
-      goalInput.placeholder = "e.g. Learn React component lifecycle";
-    }, 3000);
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      if (!tab.url || !tab.url.includes('youtube.com/watch')) {
+        saveVideoStatus.textContent = '❌ Not on a YouTube video page';
+        saveVideoStatus.style.color = '#ef4444';
+        setTimeout(() => { saveVideoStatus.textContent = ''; }, 3000);
+        return;
+      }
+      
+      // Send message to content script to capture current timestamp and open highlight modal
+      chrome.tabs.sendMessage(tab.id, { type: 'CREATE_HIGHLIGHT' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Highlight] Error:', chrome.runtime.lastError);
+          saveVideoStatus.textContent = '❌ Could not create highlight';
+          saveVideoStatus.style.color = '#ef4444';
+        } else if (response && response.success) {
+          saveVideoStatus.textContent = '✅ Highlight saved!';
+          saveVideoStatus.style.color = '#10b981';
+        }
+        setTimeout(() => { saveVideoStatus.textContent = ''; }, 3000);
+      });
+      
+    } catch (error) {
+      console.error('[Highlight] Error:', error);
+      saveVideoStatus.textContent = '❌ Error creating highlight';
+      saveVideoStatus.style.color = '#ef4444';
+      setTimeout(() => { saveVideoStatus.textContent = ''; }, 3000);
+    }
   });
 }
 
@@ -435,20 +457,25 @@ if (saveVideoButton) {
 }
 
 // --- Initialize UI & Listen for Changes ---
-chrome.storage.local.get(['sessionActive', 'goal', 'scoringType', 'simpleMode', 'advancedMode', 'sessionEndTime', 'selectedTheme', 'watchedScores', 'showSummaryOnOpen'], (prefs) => {
+chrome.storage.local.get(['sessionActive', 'goal', 'coachMode', 'coachInstructions', 'sessionEndTime', 'selectedTheme', 'watchedScores', 'showSummaryOnOpen', 'totalWatchTime'], (prefs) => {
   updateUI(prefs);
 
-  // Initialize scoring mode
-  if (prefs.scoringType) {
-    currentScoringType = prefs.scoringType;
+  // Initialize coach mode
+  if (prefs.coachMode && coachModeSelect) {
+    coachModeSelect.value = prefs.coachMode;
+    if (prefs.coachMode === 'custom') {
+      customInstructionsContainer.style.display = 'block';
+    }
   }
-  if (prefs.simpleMode) {
-    currentSimpleMode = prefs.simpleMode;
+  if (prefs.coachInstructions && coachInstructionsInput) {
+    coachInstructionsInput.value = prefs.coachInstructions;
   }
-  if (prefs.advancedMode) {
-    currentAdvancedMode = prefs.advancedMode;
+  
+  // Update watch time display
+  if (watchTimeEl && prefs.totalWatchTime) {
+    const mins = Math.floor(prefs.totalWatchTime / 60);
+    watchTimeEl.textContent = `${mins}m`;
   }
-  updateScoringModeDisplay();
 
   // Initialize theme
   const theme = prefs.selectedTheme || 'crimson-vanilla';
@@ -469,7 +496,7 @@ chrome.storage.local.get(['sessionActive', 'goal', 'scoringType', 'simpleMode', 
 
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local') {
-    chrome.storage.local.get(['sessionActive', 'goal', 'scoringType', 'simpleMode', 'advancedMode', 'sessionEndTime'], updateUI);
+    chrome.storage.local.get(['sessionActive', 'goal', 'coachMode', 'sessionEndTime', 'totalWatchTime'], updateUI);
   }
 });
 
@@ -519,160 +546,49 @@ themeSelector.addEventListener('change', () => {
   chrome.runtime.sendMessage({ type: 'THEME_CHANGED', theme: selectedTheme });
 });
 
-// --- Scoring Mode Modal Functionality ---
-let currentScoringType = 'simple'; // 'simple' or 'advanced'
-let currentSimpleMode = 'title_and_description'; // 'title_only', 'title_and_description', 'title_and_clean_desc'
-let currentAdvancedMode = ['title', 'description']; // Array of selected features
-
-// Initialize scoring mode from storage
-chrome.storage.local.get(['scoringType', 'simpleMode', 'advancedMode'], (data) => {
-  if (data.scoringType) {
-    currentScoringType = data.scoringType;
-  }
-  if (data.simpleMode) {
-    currentSimpleMode = data.simpleMode;
-  }
-  if (data.advancedMode) {
-    currentAdvancedMode = data.advancedMode;
-  }
-  updateScoringModeDisplay();
-});
-
-function updateScoringModeDisplay() {
-  let displayText = '';
-  
-  if (currentScoringType === 'simple') {
-    const modeNames = {
-      'title_only': 'Title Only',
-      'title_and_description': 'Title + Description',
-      'title_and_clean_desc': 'Title + Clean Description'
-    };
-    displayText = `Simple: ${modeNames[currentSimpleMode]}`;
-  } else {
-    const modeNames = {
-      'title': 'Title',
-      'description': 'Description', 
-      'tags': 'Tags',
-      'category': 'Category'
-    };
-    
-    // Ensure currentAdvancedMode is an array
-    if (!Array.isArray(currentAdvancedMode)) {
-      currentAdvancedMode = ['title', 'description']; // Default fallback
-    }
-    
-    const selectedNames = currentAdvancedMode.map(mode => modeNames[mode]);
-    const selectedText = selectedNames.length > 0 ? selectedNames.join(' + ') : 'None selected';
-    displayText = `Advanced: ${selectedText}`;
-  }
-  
-  scoreModeText.textContent = displayText;
-  
-  // Update selected state in dropdown
-  updateDropdownSelection();
-}
-
-function updateDropdownSelection() {
-  // Clear all selected states
-  document.querySelectorAll('.dropdown-option').forEach(option => {
-    option.classList.remove('selected');
-  });
-  
-  // Find and select the current option
-  if (currentScoringType === 'simple') {
-    const selectedOption = document.querySelector(`[data-type="simple"][data-mode="${currentSimpleMode}"]`);
-    if (selectedOption) {
-      selectedOption.classList.add('selected');
-    }
-  } else {
-    // For advanced mode, find the option that matches the current selection
-    const modeString = currentAdvancedMode.join(',');
-    const selectedOption = document.querySelector(`[data-type="advanced"][data-mode="${modeString}"]`);
-    if (selectedOption) {
-      selectedOption.classList.add('selected');
+// --- Coach Mode Initialization ---
+chrome.storage.local.get(['coachMode', 'coachInstructions'], (data) => {
+  if (coachModeSelect && data.coachMode) {
+    coachModeSelect.value = data.coachMode;
+    if (data.coachMode === 'custom') {
+      customInstructionsContainer.style.display = 'block';
     }
   }
-}
-
-// Dropdown functionality
-function toggleDropdown() {
-  dropdownContainer.classList.toggle('open');
-  dropdownMenu.classList.toggle('show');
-}
-
-function closeDropdown() {
-  dropdownContainer.classList.remove('open');
-  dropdownMenu.classList.remove('show');
-}
-
-function selectScoringMode(type, mode) {
-  if (type === 'simple') {
-    currentScoringType = 'simple';
-    currentSimpleMode = mode;
-  } else {
-    currentScoringType = 'advanced';
-    currentAdvancedMode = mode.split(',');
-  }
-  
-  updateScoringModeDisplay();
-  closeDropdown();
-  
-  // Save to storage
-  chrome.storage.local.set({ 
-    scoringType: currentScoringType,
-    simpleMode: currentSimpleMode,
-    advancedMode: currentAdvancedMode
-  });
-  
-  // Update active session if running
-  chrome.storage.local.get('sessionActive', prefs => {
-    if (prefs.sessionActive) {
-      const modeData = {
-        type: currentScoringType,
-        simpleMode: currentSimpleMode,
-        advancedMode: currentAdvancedMode
-      };
-      sendToContent({ type: 'SCORE_MODE_CHANGED', mode: modeData });
-      if (currentScoreEl) {
-        currentScoreEl.textContent = 'Scoring mode changed. Score updating...';
-        currentScoreEl.classList.remove('error');
-      }
-      setTimeout(() => {
-        chrome.storage.local.get(['lastVideoId','currentScore'], s => {
-          if (s.currentScore != null) {
-            // Handle both decimal (0.52) and percentage (52) formats
-            const score = s.currentScore;
-            const percentage = score > 1 ? score : (score * 100);
-            if (currentScoreEl) currentScoreEl.textContent = percentage.toFixed(1) + '%';
-          } else {
-            if (currentScoreEl) currentScoreEl.textContent = '\u2013';
-          }
-        });
-      }, 2000);
-    }
-  });
-}
-
-// Dropdown event listeners
-scoreModeBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  toggleDropdown();
-});
-
-// Close dropdown when clicking outside
-document.addEventListener('click', (e) => {
-  if (!dropdownContainer.contains(e.target)) {
-    closeDropdown();
+  if (coachInstructionsInput && data.coachInstructions) {
+    coachInstructionsInput.value = data.coachInstructions;
   }
 });
 
-// Handle dropdown option selection
-dropdownMenu.addEventListener('click', (e) => {
-  const option = e.target.closest('.dropdown-option');
-  if (option) {
-    const type = option.getAttribute('data-type');
-    const mode = option.getAttribute('data-mode');
-    selectScoringMode(type, mode);
+// Save custom instructions when changed
+if (coachInstructionsInput) {
+  coachInstructionsInput.addEventListener('blur', () => {
+    chrome.storage.local.set({ coachInstructions: coachInstructionsInput.value });
+  });
+}
+
+// --- Coach Message Display ---
+function showCoachMessage(message, type = 'info') {
+  if (!coachMessageEl || !coachTextEl) return;
+  
+  coachTextEl.textContent = message;
+  coachMessageEl.style.display = 'block';
+  
+  // Style based on message type
+  if (type === 'success') {
+    coachMessageEl.style.borderLeftColor = '#10b981';
+  } else if (type === 'warning') {
+    coachMessageEl.style.borderLeftColor = '#f59e0b';
+  } else if (type === 'break') {
+    coachMessageEl.style.borderLeftColor = '#ef4444';
+  } else {
+    coachMessageEl.style.borderLeftColor = '#667eea';
+  }
+}
+
+// Listen for coach messages from background
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'COACH_MESSAGE') {
+    showCoachMessage(msg.message, msg.messageType);
   }
 });
 
@@ -684,29 +600,20 @@ startBtn.addEventListener('click', () => {
   const duration = parseInt(sessionDurationInput.value, 10);
   if (!goal || !duration || duration < 1) return;
 
-  // Handle new scoring mode structure
-  let scoringData = null;
-  if (currentScoringType === 'simple') {
-    scoringData = {
-      scoringType: 'simple',
-      simpleMode: currentSimpleMode
-    };
-  } else {
-    scoringData = {
-      scoringType: 'advanced',
-      advancedMode: currentAdvancedMode
-    };
-  }
+  // Get coach mode and instructions
+  const coachMode = coachModeSelect ? coachModeSelect.value : 'balanced';
+  const coachInstructions = coachInstructionsInput ? coachInstructionsInput.value : '';
 
   chrome.runtime.sendMessage({ 
     type: 'START_SESSION', 
     duration, 
-    goal, 
-    ...scoringData 
+    goal,
+    coachMode,
+    coachInstructions
   });
   
   // Send message to content.js to start session
-  sendToContent({ type: 'START_SESSION', goal });
+  sendToContent({ type: 'START_SESSION', goal, coachMode, coachInstructions });
 });
 
 // --- Stop Session ---

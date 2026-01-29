@@ -942,24 +942,46 @@ footer {
   }
 }
 
-/* Refocus Button */
-.refocus-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  font-weight: bold;
-  transition: all 0.3s ease;
+/* Coach Mode Selector */
+.coach-mode-select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--panel);
+  color: var(--text);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
 }
 
-.refocus-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
+.coach-mode-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
-.refocus-btn span {
-  display: flex;
-  align-items: center;
-  gap: 0.5em;
-  justify-content: center;
+.coach-mode-select option {
+  background: var(--panel);
+  color: var(--text);
+}
+
+/* Coach Message Box */
+.coach-message {
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* History/Library Section */

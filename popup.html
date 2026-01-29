@@ -38,48 +38,21 @@
       <label for="sessionDuration">Session duration (minutes):</label>
       <input type="number" id="sessionDuration" min="1" value="25">
       
-      <label for="scoreModeDropdown">Scoring Mode:</label>
-      <div class="dropdown-container">
-        <button id="scoreModeBtn" class="scoring-mode-btn">
-          <span id="scoreModeText">Simple: Title + Description</span>
-          <span class="arrow">▼</span>
-        </button>
-        <div id="scoreModeDropdown" class="dropdown-menu">
-          <div class="dropdown-section">
-            <div class="dropdown-header">Simple Mode</div>
-            <div class="dropdown-option" data-type="simple" data-mode="title_only">
-              <span class="option-label">Title Only</span>
-              <span class="option-desc">Fastest scoring using only video title</span>
-            </div>
-            <div class="dropdown-option" data-type="simple" data-mode="title_and_description">
-              <span class="option-label">Title + Description</span>
-              <span class="option-desc">Standard scoring with full description</span>
-            </div>
-            <div class="dropdown-option" data-type="simple" data-mode="title_and_clean_desc">
-              <span class="option-label">Title + Clean Description</span>
-              <span class="option-desc">Smart filtering of description noise</span>
-            </div>
-          </div>
-          <div class="dropdown-section">
-            <div class="dropdown-header">Advanced Mode</div>
-            <div class="dropdown-option" data-type="advanced" data-mode="title">
-              <span class="option-label">Title Only</span>
-              <span class="option-desc">Advanced analysis of video title</span>
-            </div>
-            <div class="dropdown-option" data-type="advanced" data-mode="title,description">
-              <span class="option-label">Title + Description</span>
-              <span class="option-desc">Advanced analysis of title and description</span>
-            </div>
-            <div class="dropdown-option" data-type="advanced" data-mode="title,description,tags">
-              <span class="option-label">Title + Description + Tags</span>
-              <span class="option-desc">Multi-factor analysis with tags</span>
-            </div>
-            <div class="dropdown-option" data-type="advanced" data-mode="title,description,tags,category">
-              <span class="option-label">All Factors</span>
-              <span class="option-desc">Complete analysis (title, description, tags, category)</span>
-            </div>
-          </div>
-        </div>
+      <!-- Coach Instructions -->
+      <label for="coachMode">Coach Mode:</label>
+      <select id="coachMode" class="coach-mode-select">
+        <option value="balanced">🎯 Balanced (Default)</option>
+        <option value="strict">🚫 Strict - No distractions allowed</option>
+        <option value="relaxed">😌 Relaxed - Allow some leisure</option>
+        <option value="custom">⚙️ Custom instructions</option>
+      </select>
+      
+      <div id="customInstructionsContainer" style="display: none; margin-top: 8px;">
+        <textarea 
+          id="coachInstructions" 
+          placeholder="e.g., Allow gaming videos for 10 min breaks, remind me to stretch every 30 min..."
+          style="width: 100%; min-height: 60px; padding: 8px; border-radius: 4px; border: 2px solid var(--border); background: var(--panel); color: var(--text); font-size: 12px; resize: vertical;"
+        ></textarea>
       </div>
       
       <button id="startSession" class="action">Start Session</button>
@@ -89,7 +62,7 @@
     <!-- Current -->
     <section id="current">
       <div class="stats-container">
-        <h3>Session Stats</h3>
+        <h3>📊 Session Stats</h3>
         <div class="stat-row">
           <span class="stat-label">Videos Watched:</span>
           <span id="videosWatched" class="stat-value">0</span>
@@ -103,28 +76,34 @@
           <span id="currentScore" class="stat-value">–</span>
         </div>
         <div class="stat-row">
+          <span class="stat-label">Watch Time:</span>
+          <span id="watchTime" class="stat-value">0m</span>
+        </div>
+        <div class="stat-row">
           <span class="stat-label">Session Status:</span>
           <span id="sessionStatus" class="stat-value status-indicator">●</span>
         </div>
       </div>
       
-      <button id="refocusButton" class="action refocus-btn" style="margin-top: 16px;">
-        <span>🎯 Refocus Session</span>
-      </button>
-      <p style="font-size: 0.85em; color: #999; margin-top: 8px; text-align: center;">
-        Feeling distracted? Click to get back on track!
-      </p>
-      
-      <!-- Save Video to Library -->
-      <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
-        <button id="saveVideoButton" class="action" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-          <span>📚 Save Video to Library</span>
-        </button>
-        <p style="font-size: 0.85em; color: #999; margin-top: 8px; text-align: center;">
-          Extract transcript and save for later search
-        </p>
-        <div id="saveVideoStatus" style="font-size: 0.8em; text-align: center; margin-top: 8px; color: #999;"></div>
+      <!-- Coach Message -->
+      <div id="coachMessage" class="coach-message" style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 8px; border-left: 3px solid #667eea; display: none;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+          <span style="font-size: 1.2em;">🧠</span>
+          <span style="font-weight: bold; color: #667eea;">AI Coach</span>
+        </div>
+        <p id="coachText" style="margin: 0; font-size: 0.9em; color: var(--text);"></p>
       </div>
+      
+      <!-- Video Actions -->
+      <div style="margin-top: 16px; display: flex; gap: 8px;">
+        <button id="saveVideoButton" class="action" style="flex: 1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); font-size: 0.85em; padding: 10px;">
+          <span>📚 Save to Library</span>
+        </button>
+        <button id="highlightButton" class="action" style="flex: 1; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); font-size: 0.85em; padding: 10px;">
+          <span>✨ Highlight Section</span>
+        </button>
+      </div>
+      <div id="saveVideoStatus" style="font-size: 0.8em; text-align: center; margin-top: 8px; color: #999;"></div>
     </section>
 
     <!-- History -->

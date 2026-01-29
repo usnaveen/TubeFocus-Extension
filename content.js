@@ -815,3 +815,359 @@ chrome.storage.local.get(['sessionActive'], (prefs) => {
     startCoachMonitoring();
   }
 });
+
+// ===== VIDEO HIGHLIGHT FEATURE =====
+
+/**
+ * Creates a highlight at the current video timestamp
+ */
+async function createVideoHighlight() {
+  console.log('[Highlight] Creating highlight...');
+  
+  try {
+    const video = document.querySelector('video');
+    if (!video) {
+      return { success: false, error: 'No video found on page' };
+    }
+    
+    const currentTime = Math.floor(video.currentTime);
+    const videoId = new URL(window.location.href).searchParams.get('v');
+    const videoTitle = document.querySelector('h1.ytd-video-primary-info-renderer yt-formatted-string, #title h1 yt-formatted-string')?.textContent || document.title;
+    
+    // Format timestamp
+    const minutes = Math.floor(currentTime / 60);
+    const seconds = currentTime % 60;
+    const timestampFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
+    // Create highlight modal
+    const highlight = await showHighlightModal({
+      videoId,
+      videoTitle,
+      timestamp: currentTime,
+      timestampFormatted
+    });
+    
+    if (highlight.cancelled) {
+      return { success: false, error: 'Cancelled by user' };
+    }
+    
+    // Try to get transcript for this section
+    let transcriptExcerpt = null;
+    try {
+      transcriptExcerpt = await getTranscriptForTimestamp(currentTime, 30); // 30 seconds around timestamp
+    } catch (e) {
+      console.log('[Highlight] No transcript available for this section');
+    }
+    
+    // Save highlight via background script
+    chrome.runtime.sendMessage({
+      type: 'SAVE_HIGHLIGHT',
+      highlight: {
+        videoId,
+        videoTitle,
+        timestamp: currentTime,
+        timestampFormatted,
+        note: highlight.note,
+        transcript: transcriptExcerpt,
+        videoUrl: `https://www.youtube.com/watch?v=${videoId}&t=${currentTime}`,
+        createdAt: new Date().toISOString()
+      }
+    }, (response) => {
+      if (response && response.success) {
+        showHighlightSavedNotification(timestampFormatted);
+      }
+    });
+    
+    return { success: true, timestamp: timestampFormatted };
+    
+  } catch (error) {
+    console.error('[Highlight] Error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Show highlight modal for user to add a note
+ */
+function showHighlightModal(data) {
+  return new Promise((resolve) => {
+    // Remove existing modal
+    const existing = document.getElementById('tubefocus-highlight-modal');
+    if (existing) existing.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = 'tubefocus-highlight-modal';
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100000;
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+    `;
+    
+    modal.innerHTML = `
+      <div style="
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border-radius: 16px;
+        padding: 24px;
+        max-width: 400px;
+        width: 90%;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        border: 1px solid rgba(255,255,255,0.1);
+      ">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+          <span style="font-size: 28px;">✨</span>
+          <div>
+            <h3 style="margin: 0; color: #fff; font-size: 18px;">Save Highlight</h3>
+            <p style="margin: 4px 0 0; color: #888; font-size: 13px;">at ${data.timestampFormatted}</p>
+          </div>
+        </div>
+        
+        <p style="color: #ccc; font-size: 13px; margin-bottom: 12px; line-height: 1.4;">
+          ${data.videoTitle.substring(0, 60)}${data.videoTitle.length > 60 ? '...' : ''}
+        </p>
+        
+        <textarea 
+          id="highlight-note" 
+          placeholder="Add a note about this highlight (optional)..."
+          style="
+            width: 100%;
+            min-height: 80px;
+            padding: 12px;
+            border-radius: 8px;
+            border: 2px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            font-size: 14px;
+            resize: vertical;
+            box-sizing: border-box;
+          "
+        ></textarea>
+        
+        <div style="display: flex; gap: 10px; margin-top: 16px;">
+          <button id="highlight-save" style="
+            flex: 1;
+            padding: 12px;
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+          ">Save Highlight</button>
+          <button id="highlight-cancel" style="
+            padding: 12px 20px;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+          ">Cancel</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Focus textarea
+    setTimeout(() => document.getElementById('highlight-note').focus(), 100);
+    
+    // Handle save
+    document.getElementById('highlight-save').addEventListener('click', () => {
+      const note = document.getElementById('highlight-note').value.trim();
+      modal.remove();
+      resolve({ note, cancelled: false });
+    });
+    
+    // Handle cancel
+    document.getElementById('highlight-cancel').addEventListener('click', () => {
+      modal.remove();
+      resolve({ cancelled: true });
+    });
+    
+    // Handle escape key
+    modal.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        modal.remove();
+        resolve({ cancelled: true });
+      } else if (e.key === 'Enter' && e.ctrlKey) {
+        const note = document.getElementById('highlight-note').value.trim();
+        modal.remove();
+        resolve({ note, cancelled: false });
+      }
+    });
+  });
+}
+
+/**
+ * Get transcript text around a specific timestamp
+ */
+async function getTranscriptForTimestamp(timestamp, windowSeconds = 30) {
+  // Check if transcript panel is already open
+  let transcriptPanel = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]');
+  
+  if (!transcriptPanel) {
+    // Try to open transcript
+    const transcriptButton = document.querySelector('button[aria-label*="transcript" i], button[aria-label*="Show transcript" i]');
+    if (transcriptButton) {
+      transcriptButton.click();
+      await new Promise(r => setTimeout(r, 1500));
+      transcriptPanel = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]');
+    }
+  }
+  
+  if (!transcriptPanel) {
+    return null;
+  }
+  
+  // Get transcript segments
+  const segments = transcriptPanel.querySelectorAll('ytd-transcript-segment-renderer');
+  if (!segments.length) return null;
+  
+  const relevantText = [];
+  const startTime = Math.max(0, timestamp - windowSeconds / 2);
+  const endTime = timestamp + windowSeconds / 2;
+  
+  segments.forEach(segment => {
+    const timestampEl = segment.querySelector('.segment-timestamp');
+    const textEl = segment.querySelector('.segment-text');
+    
+    if (timestampEl && textEl) {
+      const timeText = timestampEl.textContent.trim();
+      const [mins, secs] = timeText.split(':').map(Number);
+      const segmentTime = mins * 60 + secs;
+      
+      if (segmentTime >= startTime && segmentTime <= endTime) {
+        relevantText.push(textEl.textContent.trim());
+      }
+    }
+  });
+  
+  return relevantText.length > 0 ? relevantText.join(' ') : null;
+}
+
+/**
+ * Show notification when highlight is saved
+ */
+function showHighlightSavedNotification(timestamp) {
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    bottom: 100px;
+    right: 20px;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-family: 'Roboto', sans-serif;
+    font-size: 14px;
+    z-index: 100001;
+    animation: slideIn 0.3s ease-out;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  `;
+  notification.innerHTML = `✨ Highlight saved at ${timestamp}`;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => {
+    notification.style.animation = 'slideIn 0.3s ease-out reverse';
+    setTimeout(() => notification.remove(), 300);
+  }, 2000);
+}
+
+// ===== WATCH DETECTION =====
+
+let watchDetectionInterval = null;
+let totalWatchTimeSeconds = 0;
+let lastWatchCheck = null;
+
+function startWatchDetection() {
+  if (watchDetectionInterval) return;
+  
+  lastWatchCheck = Date.now();
+  
+  watchDetectionInterval = setInterval(() => {
+    const video = document.querySelector('video');
+    if (!video) return;
+    
+    const isPlaying = !video.paused && !video.ended && video.readyState > 2;
+    const isVisible = document.visibilityState === 'visible';
+    const isWatching = isPlaying && isVisible;
+    
+    if (isWatching) {
+      const elapsed = (Date.now() - lastWatchCheck) / 1000;
+      totalWatchTimeSeconds += elapsed;
+      
+      // Store total watch time
+      chrome.storage.local.set({ totalWatchTime: totalWatchTimeSeconds });
+      
+      // Notify background every 30 seconds
+      if (Math.floor(totalWatchTimeSeconds) % 30 === 0) {
+        chrome.runtime.sendMessage({
+          type: 'WATCH_STATUS_UPDATE',
+          isWatching: true,
+          totalWatchTimeSeconds: totalWatchTimeSeconds
+        });
+      }
+    }
+    
+    lastWatchCheck = Date.now();
+  }, 1000);
+  
+  console.log('[Watch Detection] Started');
+}
+
+function stopWatchDetection() {
+  if (watchDetectionInterval) {
+    clearInterval(watchDetectionInterval);
+    watchDetectionInterval = null;
+  }
+  totalWatchTimeSeconds = 0;
+  chrome.storage.local.set({ totalWatchTime: 0 });
+  console.log('[Watch Detection] Stopped');
+}
+
+// Start watch detection when session starts
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.sessionActive) {
+    if (changes.sessionActive.newValue) {
+      startWatchDetection();
+    } else {
+      stopWatchDetection();
+    }
+  }
+});
+
+// Initialize watch detection if session is active
+chrome.storage.local.get(['sessionActive', 'totalWatchTime'], (prefs) => {
+  if (prefs.sessionActive) {
+    totalWatchTimeSeconds = prefs.totalWatchTime || 0;
+    startWatchDetection();
+  }
+});
+
+// ===== MESSAGE HANDLERS =====
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'CREATE_HIGHLIGHT') {
+    createVideoHighlight().then(result => sendResponse(result));
+    return true; // Keep channel open for async response
+  }
+  
+  if (message.type === 'GET_WATCH_STATUS') {
+    const video = document.querySelector('video');
+    const isPlaying = video && !video.paused && !video.ended;
+    sendResponse({
+      isWatching: isPlaying && document.visibilityState === 'visible',
+      totalWatchTimeSeconds
+    });
+    return true;
+  }
+});
