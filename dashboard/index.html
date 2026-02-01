@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focus Hub - TubeFocus</title>
+    <style>
+        /* 
+     * THEME VARIABLES - STRICT COPY FROM REFERENCE
+     * Ensuring exact match with Reference Repo
+     */
+        :root {
+            --bg: #c1121f;
+            --panel: #d41b2a;
+            --text: #fdf0d5;
+            --accent: #fdf0d5;
+            --highlight: #a80f1a;
+            --border: #a80f1a;
+            --summary: #f68238;
+            --font: 'Roboto Mono', monospace;
+        }
+
+        [data-theme="vanilla-crimson"] {
+            --bg: #fdf0d5;
+            --panel: #fff7ed;
+            --text: #c1121f;
+            --accent: #c1121f;
+            --highlight: #a80f1a;
+            --border: #a80f1a;
+            --summary: #f68238;
+        }
+
+        /* Base Styles */
+        * {
+            border-radius: 0;
+            /* Reset for Winamp feel if desired, but reference used rounded */
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Main Container Structure */
+        .main-container {
+            max-width: 1200px;
+            margin: 20px auto;
+            background: var(--panel);
+            border: 4px solid var(--border);
+            /* Thicker border for app-feel */
+            border-radius: 12px;
+            overflow: hidden;
+            min-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            width: 95%;
+        }
+
+        /* Header */
+        .main-header {
+            background: var(--panel);
+            border-bottom: 2px solid var(--border);
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo-text {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -1px;
+        }
+
+        /* Navigation (Tabs) */
+        .nav-menu {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: 2px solid transparent;
+            color: var(--text);
+            padding: 0.5rem 1.5rem;
+            font-family: inherit;
+            font-weight: 700;
+            font-size: 1.1rem;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+
+        .nav-btn:hover {
+            background: var(--highlight);
+            color: var(--bg);
+            /* Invert on hover if highlight is dark? No, strict copy */
+            opacity: 0.9;
+        }
+
+        .nav-btn.active {
+            background: var(--accent);
+            color: var(--bg);
+        }
+
+        /* Content Area */
+        .content-area {
+            flex: 1;
+            padding: 2rem;
+            position: relative;
+        }
+
+        .section-view {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .section-view.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* --- Chat Interface --- */
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 65vh;
+            max-width: 900px;
+            margin: 0 auto;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg);
+            overflow: hidden;
+        }
+
+        .chat-history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 1rem 1.2rem;
+            border-radius: 8px;
+            line-height: 1.5;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: var(--accent);
+            color: var(--bg);
+            border-bottom-right-radius: 0;
+        }
+
+        .message.bot {
+            align-self: flex-start;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-bottom-left-radius: 0;
+        }
+
+        /* Markdown Stubs */
+        .message.bot ul,
+        .message.bot ol {
+            margin: 0.5rem 0 0.5rem 1.5rem;
+        }
+
+        .message.bot p {
+            margin: 0 0 0.5rem 0;
+        }
+
+        .message.bot p:last-child {
+            margin: 0;
+        }
+
+        .message.bot strong {
+            color: var(--accent);
+        }
+
+        .chat-input-area {
+            padding: 1rem;
+            background: var(--panel);
+            border-top: 2px solid var(--border);
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        input.chat-input {
+            flex: 1;
+            padding: 0.8rem;
+            border-radius: 6px;
+            border: 2px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 1rem;
+        }
+
+        input.chat-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(253, 240, 213, 0.2);
+        }
+
+        button.send-btn {
+            padding: 0 1.5rem;
+            background: var(--accent);
+            color: var(--bg);
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: inherit;
+            transition: transform 0.1s;
+        }
+
+        button.send-btn:active {
+            transform: scale(0.95);
+        }
+
+        button.send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* --- Highlights Grid --- */
+        .highlights-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .highlight-card {
+            background: var(--bg);
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .highlight-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            border-color: var(--accent);
+        }
+
+        .highlight-text {
+            font-size: 1rem;
+            line-height: 1.6;
+            margin-bottom: 1rem;
+            display: block;
+            color: var(--text);
+            font-style: italic;
+            border-left: 3px solid var(--accent);
+            padding-left: 1rem;
+        }
+
+        .highlight-note {
+            font-size: 0.9rem;
+            padding: 0.5rem;
+            background: var(--panel);
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+        }
+
+        .highlight-meta {
+            font-size: 0.8rem;
+            opacity: 0.8;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .highlight-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .highlight-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Theme Toggle */
+        .theme-toggle-container {
+            margin-left: 1rem;
+        }
+
+        select.theme-select {
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--highlight);
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        /* Loading State */
+        .loading-spinner {
+            margin: 2rem auto;
+            text-align: center;
+            font-size: 1.2rem;
+            color: var(--accent);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem;
+            opacity: 0.7;
+        }
+
+        .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+
+<body data-theme="crimson-vanilla">
+
+    <div class="main-container">
+        <header class="main-header">
+            <div class="logo-text">FocusHub</div>
+
+            <nav class="nav-menu">
+                <button class="nav-btn active" onclick="switchTab('highlights')">Highlights</button>
+                <button class="nav-btn" onclick="switchTab('chat')">Librarian Chat</button>
+            </nav>
+
+            <div class="theme-toggle-container">
+                <select class="theme-select" id="themeSelect">
+                    <option value="crimson-vanilla">Crimson Flame</option>
+                    <option value="vanilla-crimson">Vanilla Cream</option>
+                    <option value="darkreader">Darkreader</option>
+                    <option value="cocoa-lemon">Cocoa Lemon</option>
+                    <option value="golden-ocean">Golden Ocean</option>
+                    <option value="dusty-apricot">Dusty Apricot</option>
+                    <option value="spiced-forest">Spiced Forest</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="content-area">
+            <!-- Highlights Section -->
+            <div id="highlights-view" class="section-view active">
+                <h2 style="color: var(--accent); margin-top: 0;">Your Saved Highlights</h2>
+                <div id="highlights-container" class="highlights-grid">
+                    <!-- Populated by JS -->
+                    <div class="loading-spinner">Loading highlights...</div>
+                </div>
+            </div>
+
+            <!-- Chat Section -->
+            <div id="chat-view" class="section-view">
+                <div class="chat-container">
+                    <div class="chat-history" id="chat-history">
+                        <div class="message bot">
+                            Hello! I'm your Librarian. I can answer questions based on the videos you've watched and
+                            indexed. What would you like to know?
+                        </div>
+                    </div>
+                    <div class="chat-input-area">
+                        <input type="text" class="chat-input" id="chat-input"
+                            placeholder="Ask about your video history..." onkeypress="handleEnter(event)">
+                        <button class="send-btn" id="send-btn" onclick="sendMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <title>TUBE FOCUS</title>
   <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
   <div class="popup-container">
     <!-- Header & Toggles -->
@@ -25,19 +27,24 @@
 
     <!-- Tabs -->
     <nav class="tabs">
-      <button data-tab="setup"  class="active">Setup</button>
+      <button data-tab="setup" class="active">Setup</button>
       <button data-tab="current">Current</button>
-      <button data-tab="history">History</button>
-      <button data-tab="summary">Summary</button>
     </nav>
+
+    <div style="padding: 0 0.5rem; margin-top: 0.5rem;">
+      <button id="openDashboard"
+        style="width: 100%; border: 2px solid var(--accent); background: transparent; color: var(--accent); padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit;">
+        Open Focus Hub ↗
+      </button>
+    </div>
 
     <!-- Setup -->
     <section id="setup" class="active">
-      <label for="goalInput">  Define your goal in detail:</label>
+      <label for="goalInput"> Define your goal in detail:</label>
       <input type="text" id="goalInput" placeholder="e.g. Learn React component lifecycle">
       <label for="sessionDuration">Session duration (minutes):</label>
       <input type="number" id="sessionDuration" min="1" value="25">
-      
+
       <!-- Coach Instructions -->
       <label for="coachMode">Coach Mode:</label>
       <select id="coachMode" class="coach-mode-select">
@@ -46,17 +53,15 @@
         <option value="relaxed">😌 Relaxed - Allow some leisure</option>
         <option value="custom">⚙️ Custom instructions</option>
       </select>
-      
+
       <div id="customInstructionsContainer" style="display: none; margin-top: 8px;">
-        <textarea 
-          id="coachInstructions" 
+        <textarea id="coachInstructions"
           placeholder="e.g., Allow gaming videos for 10 min breaks, remind me to stretch every 30 min..."
-          style="width: 100%; min-height: 60px; padding: 8px; border-radius: 4px; border: 2px solid var(--border); background: var(--panel); color: var(--text); font-size: 12px; resize: vertical;"
-        ></textarea>
+          style="width: 100%; min-height: 60px; padding: 8px; border-radius: 4px; border: 2px solid var(--border); background: var(--panel); color: var(--text); font-size: 12px; resize: vertical;"></textarea>
       </div>
-      
+
       <button id="startSession" class="action">Start Session</button>
-      <button id="stopSession"  class="action" disabled>Stop Session</button>
+      <button id="stopSession" class="action" disabled>Stop Session</button>
     </section>
 
     <!-- Current -->
@@ -84,89 +89,50 @@
           <span id="sessionStatus" class="stat-value status-indicator">●</span>
         </div>
       </div>
-      
+
       <!-- Coach Message -->
-      <div id="coachMessage" class="coach-message" style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 8px; border-left: 3px solid #667eea; display: none;">
+      <div id="coachMessage" class="coach-message"
+        style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 8px; border-left: 3px solid #667eea; display: none;">
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
           <span style="font-size: 1.2em;">🧠</span>
           <span style="font-weight: bold; color: #667eea;">AI Coach</span>
         </div>
         <p id="coachText" style="margin: 0; font-size: 0.9em; color: var(--text);"></p>
       </div>
-      
+
       <!-- Video Actions -->
       <div style="margin-top: 16px; display: flex; gap: 8px;">
-        <button id="saveVideoButton" class="action" style="flex: 1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); font-size: 0.85em; padding: 10px;">
+        <button id="saveVideoButton" class="action"
+          style="flex: 1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); font-size: 0.85em; padding: 10px;">
           <span>📚 Save to Library</span>
         </button>
-        <button id="highlightButton" class="action" style="flex: 1; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); font-size: 0.85em; padding: 10px;">
+        <button id="highlightButton" class="action"
+          style="flex: 1; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); font-size: 0.85em; padding: 10px;">
           <span>✨ Highlight Section</span>
         </button>
       </div>
       <div id="saveVideoStatus" style="font-size: 0.8em; text-align: center; margin-top: 8px; color: #999;"></div>
     </section>
 
-    <!-- History -->
-    <section id="history">
-      <div class="history-container">
-        <h3>📚 Video Library</h3>
-        <p style="font-size: 0.85em; color: #999; margin-bottom: 12px;">
-          Search through your watched videos
-        </p>
-        
-        <div class="search-box">
-          <input 
-            type="text" 
-            id="historySearch" 
-            placeholder="Search for topics, concepts..." 
-            style="width: 100%; padding: 8px; border-radius: 4px; border: 2px solid var(--border); background: var(--panel); color: var(--text); font-size: 13px;"
-          />
-          <button id="searchButton" class="action" style="margin-top: 8px; width: 100%;">
-            🔍 Search History
-          </button>
-        </div>
-        
-        <div id="searchResults" style="margin-top: 16px;">
-          <div style="text-align: center; color: #999; font-size: 0.9em;">
-            Enter a search query to find videos
-          </div>
-        </div>
-        
-        <div id="librarianStats" style="margin-top: 16px; padding: 12px; background: var(--panel); border-radius: 6px; border: 1px solid var(--border); font-size: 0.85em;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-            <span>Indexed Videos:</span>
-            <span id="indexedCount">—</span>
-          </div>
-          <div style="display: flex; justify-content: space-between;">
-            <span>Total Chunks:</span>
-            <span id="chunksCount">—</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Summary -->
-    <section id="summary">
-      <h2>Session Summary</h2>
-      <div id="summaryMessage"></div>
-      <canvas id="scoreChart" width="240" height="120"></canvas>
-    </section>
+    <!-- Sections removed: History and Summary are now in the Focus Hub Dashboard -->
 
     <!-- Settings -->
     <section id="settings">
       <div class="settings-header">
         <button id="backToMain" class="back-button">
-          <svg fill="currentColor" height="20px" width="20px" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+          <svg fill="currentColor" height="20px" width="20px" version="1.1" xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 512 512">
             <g>
               <g>
-                <path d="M441.751,475.584L222.166,256L441.75,36.416c6.101-6.101,7.936-15.275,4.629-23.253C443.094,5.184,435.286,0,426.667,0 H320.001c-5.675,0-11.093,2.24-15.083,6.251L70.251,240.917c-8.341,8.341-8.341,21.824,0,30.165l234.667,234.667 c3.989,4.011,9.408,6.251,15.083,6.251h106.667c8.619,0,16.427-5.184,19.712-13.163 C449.687,490.858,447.852,481.685,441.751,475.584z"/>
+                <path
+                  d="M441.751,475.584L222.166,256L441.75,36.416c6.101-6.101,7.936-15.275,4.629-23.253C443.094,5.184,435.286,0,426.667,0 H320.001c-5.675,0-11.093,2.24-15.083,6.251L70.251,240.917c-8.341,8.341-8.341,21.824,0,30.165l234.667,234.667 c3.989,4.011,9.408,6.251,15.083,6.251h106.667c8.619,0,16.427-5.184,19.712-13.163 C449.687,490.858,447.852,481.685,441.751,475.584z" />
               </g>
             </g>
           </svg>
         </button>
         <h2>Settings</h2>
       </div>
-      
+
       <!-- Theme Selection -->
       <div class="settings-row">
         <div>
@@ -183,22 +149,11 @@
           <option value="spiced-forest">Spiced Orange & Deep Forest</option>
         </select>
       </div>
-      
-      <div class="settings-row">
-        <div>
-          <span style="font-weight:bold;">Share Session History</span>
-          <div style="font-size:0.9em; color:#ccc; margin-top:0.2em;">Allow the extension to upload your session history to the cloud for analysis.</div>
-        </div>
-        <label class="ios-switch">
-          <input type="checkbox" id="shareHistoryToggle" />
-          <span class="slider"></span>
-        </label>
-      </div>
+
     </section>
 
     <!-- Footer -->
     <footer>
-      <span>Meet the Creator</span>
       <img id="settingsIcon" class="settings-icon" src="Settings.svg" alt="Settings" title="Settings" />
     </footer>
   </div>
@@ -209,4 +164,5 @@
   <script src="libs/chart.min.js"></script>
   <script src="popup.js"></script>
 </body>
+
 </html>

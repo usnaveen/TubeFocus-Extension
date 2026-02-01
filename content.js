@@ -3,16 +3,16 @@ console.log('[content.js] injected - CLOUD RUN MODE');
 console.log('[content.js] API Base URL:', 'https://yt-scorer-api-933573987016.us-central1.run.app');
 
 let sessionActive = false;
-let userGoal      = '';
-let lastVideoId   = null;
-let currentScore  = null;
+let userGoal = '';
+let lastVideoId = null;
+let currentScore = null;
 let lastFlashTime = 0;
-let scoreDisplay  = null;
+let scoreDisplay = null;
 
 // Create the score display component
 function createScoreDisplay() {
   if (scoreDisplay) return scoreDisplay;
-  
+
   scoreDisplay = document.createElement('div');
   scoreDisplay.id = 'tubefocus-score-display';
   scoreDisplay.style.cssText = `
@@ -72,7 +72,7 @@ function updateScoreDisplay(state, data = {}) {
       const percentage = score > 1 ? Math.round(score) : Math.round(score * 100);
       // Use normalized score for color calculation (always 0-1 range)
       const normalizedScore = score > 1 ? score / 100 : score;
-      
+
       if (normalizedScore <= 0.3) color = '#dc2626';
       else if (normalizedScore >= 0.8) color = '#16a34a';
       else {
@@ -87,7 +87,6 @@ function updateScoreDisplay(state, data = {}) {
       borderColor = color;
       html = `
         <div style="font-size: 16px; margin-bottom: 2px;">${percentage}%</div>
-        <div style="font-size: 10px; opacity: 0.7;">${data.category || 'Video'}</div>
       `;
       break;
   }
@@ -131,11 +130,11 @@ function hideScoreDisplay() {
 // apply a green→red gradient across the page and key YouTube containers
 function applyColor(score) {
   let primary = 'transparent';
-  
+
   if (score !== null && score !== undefined) {
     // Handle both decimal (0.52) and percentage (52) formats
     const normalizedScore = score > 1 ? score / 100 : score;
-    
+
     if (normalizedScore <= 0.3) primary = '#dc2626';
     else if (normalizedScore >= 0.8) primary = '#16a34a';
     else {
@@ -213,11 +212,11 @@ function showErrorOverlay(msg) {
 // ask background.js to score
 function fetchScore(url, goal) {
   return new Promise((res, rej) => {
-    const message = { type:'FETCH_SCORE', url, goal };
+    const message = { type: 'FETCH_SCORE', url, goal };
 
     chrome.runtime.sendMessage(message, r => {
       if (chrome.runtime.lastError) return rej(new Error(chrome.runtime.lastError.message));
-      if (r.error)                 return rej(new Error(r.error));
+      if (r.error) return rej(new Error(r.error));
       res(r); // Return full response object
     });
   });
@@ -233,7 +232,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log('[content.js] session STARTED:', userGoal);
       sendResponse({ success: true });
       break;
-      
+
     case 'STOP_SESSION':
     case 'SESSION_STOPPED': // Handling both just in case
       sessionActive = false;
@@ -275,12 +274,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // hydrate state on load
 chrome.storage.local.get(
-  ['sessionActive','goal','lastVideoId','currentScore','selectedTheme'],
+  ['sessionActive', 'goal', 'lastVideoId', 'currentScore', 'selectedTheme'],
   prefs => {
     sessionActive = !!prefs.sessionActive;
-    userGoal      = prefs.goal || '';
-    lastVideoId   = prefs.lastVideoId || null;
-    currentScore  = prefs.currentScore || null;
+    userGoal = prefs.goal || '';
+    lastVideoId = prefs.lastVideoId || null;
+    currentScore = prefs.currentScore || null;
     // Theme initialization
     const theme = prefs.selectedTheme || 'crimson-vanilla';
     document.documentElement.setAttribute('data-theme', theme);
@@ -363,7 +362,7 @@ async function tryScore() {
 
   lastVideoId = vid;
   currentScore = null;
-  
+
   // Ensure score display exists and show loading state
   if (!scoreDisplay) {
     scoreDisplay = createScoreDisplay();
@@ -377,10 +376,10 @@ async function tryScore() {
     fetchScore(location.href, goal).then(response => {
       currentScore = response.score;
       applyColor(currentScore);
-      
+
       // Extract category information from various possible response fields
       let category = 'Content'; // Better default fallback than "Video"
-      
+
       if (response.category_name && response.category_name !== 'Unknown' && response.category_name !== '') {
         category = response.category_name;
       } else if (response.category && response.category !== 'Unknown' && response.category !== '') {
@@ -403,10 +402,10 @@ async function tryScore() {
           category = 'YouTube Video';
         }
       }
-      
+
       // Debug logging can be uncommented for troubleshooting
       // console.log('[content.js] Category resolved:', category, 'from response:', response);
-      
+
       updateScoreDisplay('success', { score: currentScore, category: category });
 
       chrome.runtime.sendMessage({ type: 'NEW_SCORE', score: currentScore });
@@ -415,7 +414,7 @@ async function tryScore() {
         const arr = d.watchedScores || [];
         arr.push(currentScore);
         chrome.storage.local.set({ watchedScores: arr, lastVideoId, currentScore });
-        
+
         // Track for Coach Agent
         trackVideoForCoach(vid, title || 'Unknown Video', currentScore);
       });
@@ -465,7 +464,7 @@ window.addEventListener('unload', () => clearInterval(timerId));
  */
 async function scrapeTranscriptFromYouTube() {
   console.log('[Transcript] Attempting to scrape transcript from YouTube UI...');
-  
+
   try {
     // Step 1: Find and click the "Show transcript" button
     // YouTube's button is in the description area
@@ -474,18 +473,18 @@ async function scrapeTranscriptFromYouTube() {
       ...document.querySelectorAll('yt-button-shape[aria-label*="transcript" i]'),
       ...document.querySelectorAll('[class*="transcript"] button'),
     ];
-    
+
     let transcriptButton = null;
     for (const btn of transcriptButtons) {
       const text = btn.textContent.toLowerCase();
       const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-      if (text.includes('transcript') || text.includes('show transcript') || 
-          ariaLabel.includes('transcript') || ariaLabel.includes('show transcript')) {
+      if (text.includes('transcript') || text.includes('show transcript') ||
+        ariaLabel.includes('transcript') || ariaLabel.includes('show transcript')) {
         transcriptButton = btn;
         break;
       }
     }
-    
+
     if (!transcriptButton) {
       console.warn('[Transcript] Show transcript button not found - transcript may not be available');
       return {
@@ -494,17 +493,17 @@ async function scrapeTranscriptFromYouTube() {
         transcript: null
       };
     }
-    
+
     // Click the button to open transcript panel
     transcriptButton.click();
     console.log('[Transcript] Clicked show transcript button');
-    
+
     // Step 2: Wait for transcript panel to load
     await new Promise(resolve => setTimeout(resolve, 1500));
-    
+
     // Step 3: Find transcript panel and extract text
     const transcriptPanel = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]');
-    
+
     if (!transcriptPanel) {
       console.warn('[Transcript] Transcript panel not found after clicking button');
       return {
@@ -513,10 +512,10 @@ async function scrapeTranscriptFromYouTube() {
         transcript: null
       };
     }
-    
+
     // Extract transcript segments
     const segments = transcriptPanel.querySelectorAll('ytd-transcript-segment-renderer');
-    
+
     if (segments.length === 0) {
       console.warn('[Transcript] No transcript segments found in panel');
       return {
@@ -525,19 +524,19 @@ async function scrapeTranscriptFromYouTube() {
         transcript: null
       };
     }
-    
+
     // Combine all transcript text
     let fullTranscript = '';
     const segmentData = [];
-    
+
     segments.forEach(segment => {
       const textEl = segment.querySelector('.segment-text');
       const timestampEl = segment.querySelector('.segment-timestamp');
-      
+
       if (textEl) {
         const text = textEl.textContent.trim();
         const timestamp = timestampEl ? timestampEl.textContent.trim() : '';
-        
+
         fullTranscript += text + ' ';
         segmentData.push({
           text: text,
@@ -545,14 +544,14 @@ async function scrapeTranscriptFromYouTube() {
         });
       }
     });
-    
+
     fullTranscript = fullTranscript.trim();
-    
+
     console.log(`[Transcript] Successfully scraped ${segments.length} segments (${fullTranscript.length} chars)`);
-    
+
     // Step 4: Close the transcript panel (optional - keep it open if user wants)
     // transcriptButton.click(); // Uncomment to auto-close
-    
+
     return {
       success: true,
       transcript: fullTranscript,
@@ -561,7 +560,7 @@ async function scrapeTranscriptFromYouTube() {
       charCount: fullTranscript.length,
       error: null
     };
-    
+
   } catch (error) {
     console.error('[Transcript] Error scraping transcript:', error);
     return {
@@ -592,9 +591,9 @@ let sessionVideosWatched = [];
 
 function startCoachMonitoring() {
   if (coachCheckInterval) return; // Already running
-  
+
   console.log('[Coach] Starting proactive monitoring');
-  
+
   // Check every 2 minutes for behavioral patterns
   coachCheckInterval = setInterval(() => {
     if (sessionActive && sessionVideosWatched.length >= 3) {
@@ -619,9 +618,9 @@ function trackVideoForCoach(videoId, title, score) {
     score: score,
     timestamp: new Date().toISOString()
   };
-  
+
   sessionVideosWatched.push(videoData);
-  
+
   // Keep only last 15 videos
   if (sessionVideosWatched.length > 15) {
     sessionVideosWatched.shift();
@@ -630,15 +629,15 @@ function trackVideoForCoach(videoId, title, score) {
 
 async function requestCoachAnalysis() {
   if (!sessionActive || sessionVideosWatched.length === 0) return;
-  
+
   console.log('[Coach] Requesting analysis with', sessionVideosWatched.length, 'videos');
-  
+
   chrome.storage.local.get(['goal'], (prefs) => {
     const goal = prefs.goal || userGoal;
     if (!goal) return;
-    
+
     const sessionId = `session_${Date.now()}`;
-    
+
     chrome.runtime.sendMessage({
       type: 'COACH_ANALYZE',
       sessionId: sessionId,
@@ -649,7 +648,7 @@ async function requestCoachAnalysis() {
         console.error('[Coach] Error:', chrome.runtime.lastError);
         return;
       }
-      
+
       if (response && response.analysis && response.analysis.intervention_needed) {
         showCoachNotification(response.analysis);
       }
@@ -661,7 +660,7 @@ function showCoachNotification(analysis) {
   // Remove existing notification if present
   const existing = document.getElementById('tubefocus-coach-notification');
   if (existing) existing.remove();
-  
+
   const notification = document.createElement('div');
   notification.id = 'tubefocus-coach-notification';
   notification.className = 'tubefocus-coach-notification';
@@ -679,7 +678,7 @@ function showCoachNotification(analysis) {
     font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
     animation: slideIn 0.4s ease-out;
   `;
-  
+
   // Icon based on pattern
   const patternIcons = {
     'doom_scrolling': '⚠️',
@@ -688,9 +687,9 @@ function showCoachNotification(analysis) {
     'binge_watching': '📺',
     'on_track': '✅'
   };
-  
+
   const icon = patternIcons[analysis.pattern_detected] || '💡';
-  
+
   notification.innerHTML = `
     <style>
       @keyframes slideIn {
@@ -741,20 +740,20 @@ function showCoachNotification(analysis) {
       <button class="coach-dismiss">Later</button>
     </div>
   `;
-  
+
   document.body.appendChild(notification);
-  
+
   // Handle action button
   notification.querySelector('.coach-action').addEventListener('click', () => {
     handleCoachAction(analysis.suggested_action);
     notification.remove();
   });
-  
+
   // Handle dismiss button
   notification.querySelector('.coach-dismiss').addEventListener('click', () => {
     notification.remove();
   });
-  
+
   // Auto-dismiss after 15 seconds
   setTimeout(() => {
     if (notification.parentNode) {
@@ -777,8 +776,8 @@ function getActionButtonText(action) {
 
 function handleCoachAction(action) {
   console.log('[Coach] User action:', action);
-  
-  switch(action) {
+
+  switch (action) {
     case 'refocus':
       // Clear current session and show popup
       chrome.runtime.sendMessage({ type: 'SHOW_POPUP' });
@@ -823,22 +822,22 @@ chrome.storage.local.get(['sessionActive'], (prefs) => {
  */
 async function createVideoHighlight() {
   console.log('[Highlight] Creating highlight...');
-  
+
   try {
     const video = document.querySelector('video');
     if (!video) {
       return { success: false, error: 'No video found on page' };
     }
-    
+
     const currentTime = Math.floor(video.currentTime);
     const videoId = new URL(window.location.href).searchParams.get('v');
     const videoTitle = document.querySelector('h1.ytd-video-primary-info-renderer yt-formatted-string, #title h1 yt-formatted-string')?.textContent || document.title;
-    
+
     // Format timestamp
     const minutes = Math.floor(currentTime / 60);
     const seconds = currentTime % 60;
     const timestampFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    
+
     // Create highlight modal
     const highlight = await showHighlightModal({
       videoId,
@@ -846,11 +845,11 @@ async function createVideoHighlight() {
       timestamp: currentTime,
       timestampFormatted
     });
-    
+
     if (highlight.cancelled) {
       return { success: false, error: 'Cancelled by user' };
     }
-    
+
     // Try to get transcript for this section
     let transcriptExcerpt = null;
     try {
@@ -858,7 +857,7 @@ async function createVideoHighlight() {
     } catch (e) {
       console.log('[Highlight] No transcript available for this section');
     }
-    
+
     // Save highlight via background script
     chrome.runtime.sendMessage({
       type: 'SAVE_HIGHLIGHT',
@@ -877,9 +876,9 @@ async function createVideoHighlight() {
         showHighlightSavedNotification(timestampFormatted);
       }
     });
-    
+
     return { success: true, timestamp: timestampFormatted };
-    
+
   } catch (error) {
     console.error('[Highlight] Error:', error);
     return { success: false, error: error.message };
@@ -894,7 +893,7 @@ function showHighlightModal(data) {
     // Remove existing modal
     const existing = document.getElementById('tubefocus-highlight-modal');
     if (existing) existing.remove();
-    
+
     const modal = document.createElement('div');
     modal.id = 'tubefocus-highlight-modal';
     modal.style.cssText = `
@@ -910,7 +909,7 @@ function showHighlightModal(data) {
       z-index: 100000;
       font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
     `;
-    
+
     modal.innerHTML = `
       <div style="
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -974,25 +973,25 @@ function showHighlightModal(data) {
         </div>
       </div>
     `;
-    
+
     document.body.appendChild(modal);
-    
+
     // Focus textarea
     setTimeout(() => document.getElementById('highlight-note').focus(), 100);
-    
+
     // Handle save
     document.getElementById('highlight-save').addEventListener('click', () => {
       const note = document.getElementById('highlight-note').value.trim();
       modal.remove();
       resolve({ note, cancelled: false });
     });
-    
+
     // Handle cancel
     document.getElementById('highlight-cancel').addEventListener('click', () => {
       modal.remove();
       resolve({ cancelled: true });
     });
-    
+
     // Handle escape key
     modal.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -1013,7 +1012,7 @@ function showHighlightModal(data) {
 async function getTranscriptForTimestamp(timestamp, windowSeconds = 30) {
   // Check if transcript panel is already open
   let transcriptPanel = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]');
-  
+
   if (!transcriptPanel) {
     // Try to open transcript
     const transcriptButton = document.querySelector('button[aria-label*="transcript" i], button[aria-label*="Show transcript" i]');
@@ -1023,34 +1022,34 @@ async function getTranscriptForTimestamp(timestamp, windowSeconds = 30) {
       transcriptPanel = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]');
     }
   }
-  
+
   if (!transcriptPanel) {
     return null;
   }
-  
+
   // Get transcript segments
   const segments = transcriptPanel.querySelectorAll('ytd-transcript-segment-renderer');
   if (!segments.length) return null;
-  
+
   const relevantText = [];
   const startTime = Math.max(0, timestamp - windowSeconds / 2);
   const endTime = timestamp + windowSeconds / 2;
-  
+
   segments.forEach(segment => {
     const timestampEl = segment.querySelector('.segment-timestamp');
     const textEl = segment.querySelector('.segment-text');
-    
+
     if (timestampEl && textEl) {
       const timeText = timestampEl.textContent.trim();
       const [mins, secs] = timeText.split(':').map(Number);
       const segmentTime = mins * 60 + secs;
-      
+
       if (segmentTime >= startTime && segmentTime <= endTime) {
         relevantText.push(textEl.textContent.trim());
       }
     }
   });
-  
+
   return relevantText.length > 0 ? relevantText.join(' ') : null;
 }
 
@@ -1075,7 +1074,7 @@ function showHighlightSavedNotification(timestamp) {
   `;
   notification.innerHTML = `✨ Highlight saved at ${timestamp}`;
   document.body.appendChild(notification);
-  
+
   setTimeout(() => {
     notification.style.animation = 'slideIn 0.3s ease-out reverse';
     setTimeout(() => notification.remove(), 300);
@@ -1090,24 +1089,24 @@ let lastWatchCheck = null;
 
 function startWatchDetection() {
   if (watchDetectionInterval) return;
-  
+
   lastWatchCheck = Date.now();
-  
+
   watchDetectionInterval = setInterval(() => {
     const video = document.querySelector('video');
     if (!video) return;
-    
+
     const isPlaying = !video.paused && !video.ended && video.readyState > 2;
     const isVisible = document.visibilityState === 'visible';
     const isWatching = isPlaying && isVisible;
-    
+
     if (isWatching) {
       const elapsed = (Date.now() - lastWatchCheck) / 1000;
       totalWatchTimeSeconds += elapsed;
-      
+
       // Store total watch time
       chrome.storage.local.set({ totalWatchTime: totalWatchTimeSeconds });
-      
+
       // Notify background every 30 seconds
       if (Math.floor(totalWatchTimeSeconds) % 30 === 0) {
         chrome.runtime.sendMessage({
@@ -1117,10 +1116,10 @@ function startWatchDetection() {
         });
       }
     }
-    
+
     lastWatchCheck = Date.now();
   }, 1000);
-  
+
   console.log('[Watch Detection] Started');
 }
 
@@ -1160,7 +1159,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     createVideoHighlight().then(result => sendResponse(result));
     return true; // Keep channel open for async response
   }
-  
+
   if (message.type === 'GET_WATCH_STATUS') {
     const video = document.querySelector('video');
     const isPlaying = video && !video.paused && !video.ended;
@@ -1171,3 +1170,140 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+// Listen for 'h' key to trigger highlight
+document.addEventListener('keydown', (e) => {
+  // Ignore if typing in an input text area
+  if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) || document.activeElement.isContentEditable) {
+    return;
+  }
+
+  if (e.key.toLowerCase() === 'h') {
+    e.preventDefault();
+    if (sessionActive) {
+      showHighlightModal();
+    } else {
+      // Optional: Prompt to start session?
+      showErrorOverlay('Start a session to save highlights!');
+    }
+  }
+});
+
+function showHighlightModal() {
+  // Remove existing if any
+  const existing = document.getElementById('tubefocus-highlight-modal');
+  if (existing) existing.remove();
+
+  // Get current timestamp text
+  const video = document.querySelector('video');
+  const timestamp = video ? video.currentTime : 0;
+
+  // Create Modal
+  const modal = document.createElement('div');
+  modal.id = 'tubefocus-highlight-modal';
+
+  // We use inline styles that reference the CSS variables we expect to be present
+  // OR we inject the values from storage.
+  // Since content.js is isolated, we need to re-fetch theme colors or rely on `applyColor` doing it?
+  // Better: Fetch theme prefs and apply styles directly.
+
+  chrome.storage.local.get(['selectedTheme'], (prefs) => {
+    const theme = prefs.selectedTheme || 'crimson-vanilla';
+
+    // Define theme colors map (since we can't easily inherit global CSS vars from extension in content script without injecting a css file)
+    // We already have a map in `updateScoreDisplay`. Let's reuse/expand it.
+    const themes = {
+      'crimson-vanilla': { panel: '#d41b2a', bg: '#c1121f', text: '#fdf0d5', accent: '#fdf0d5', border: '#a80f1a' },
+      'vanilla-crimson': { panel: '#fff7ed', bg: '#fdf0d5', text: '#c1121f', accent: '#c1121f', border: '#a80f1a' },
+      'darkreader': { panel: '#32454e', bg: '#181e22', text: '#ddd', accent: '#cc785c', border: '#101417' },
+      // ... others mapped similarly or fallback
+    };
+
+    // Fallback dictionary or use current choice
+    const t = themes[theme] || themes['crimson-vanilla'];
+
+    modal.style.cssText = `
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: ${t.panel};
+      color: ${t.text};
+      border: 2px solid ${t.border};
+      padding: 24px;
+      border-radius: 12px;
+      z-index: 2147483647;
+      width: 400px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+      font-family: 'Roboto Mono', monospace;
+      animation: popIn 0.2s ease-out;
+    `;
+
+    modal.innerHTML = `
+      <style>
+        @keyframes popIn { from { opacity: 0; transform: translate(-50%, -45%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+        .tf-h-title { font-size: 1.2rem; font-weight: bold; color: ${t.accent}; margin-bottom: 12px; }
+        .tf-h-textarea { 
+          width: 100%; height: 80px; 
+          background: ${t.bg}; color: ${t.text}; 
+          border: 1px solid ${t.border}; 
+          padding: 8px; border-radius: 6px; 
+          font-family: inherit; margin-bottom: 12px;
+        }
+        .tf-h-textarea:focus { outline: 2px solid ${t.accent}; }
+        .tf-actions { display: flex; justify-content: flex-end; gap: 8px; }
+        .tf-btn { border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .tf-btn-save { background: ${t.accent}; color: ${t.panel}; }
+        .tf-btn-cancel { background: transparent; color: ${t.text}; border: 1px solid ${t.border}; }
+      </style>
+      <div class="tf-h-title">💾 Save Highlight</div>
+      <div style="font-size:0.9rem; margin-bottom:8px; opacity:0.8;">Saving timestamp: ${Math.floor(timestamp)}s</div>
+      <textarea class="tf-h-textarea" id="tf-note" placeholder="Add a note (optional)..."></textarea>
+      <div class="tf-actions">
+        <button class="tf-btn tf-btn-cancel" id="tf-cancel">Cancel</button>
+        <button class="tf-btn tf-btn-save" id="tf-save">Save</button>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Focus textarea
+    setTimeout(() => document.getElementById('tf-note').focus(), 50);
+
+    // Handlers
+    document.getElementById('tf-cancel').onclick = () => modal.remove();
+    document.getElementById('tf-save').onclick = () => {
+      const note = document.getElementById('tf-note').value;
+      saveHighlight(timestamp, note);
+      modal.remove();
+    };
+  });
+}
+
+function saveHighlight(timestamp, note) {
+  // Send to backend via background
+  const m = location.href.match(/[?&]v=([^&]+)/);
+  const videoId = m ? m[1] : lastVideoId;
+  const title = document.title.replace(' - YouTube', '');
+
+  chrome.runtime.sendMessage({
+    type: 'INDEX_VIDEO', // We use index_video but with specific "highlight" metadata
+    data: {
+      video_id: videoId,
+      title: title,
+      transcript: note, // We treat the note as the "text" for this snippet
+      goal: userGoal,
+      score: currentScore || 0,
+      metadata: {
+        type: 'highlight',
+        timestamp: timestamp,
+        note: note,
+        video_url: location.href
+      }
+    }
+  }, (response) => {
+    if (response && response.success) {
+      showErrorOverlay('Highlight Saved! ✅'); // Reusing the overlay for success msg
+    } else {
+      showErrorOverlay('Failed to save highlight.');
+    }
+  });
+}
