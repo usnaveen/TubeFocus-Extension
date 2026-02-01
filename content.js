@@ -87,6 +87,7 @@ function updateScoreDisplay(state, data = {}) {
       borderColor = color;
       html = `
         <div style="font-size: 16px; margin-bottom: 2px;">${percentage}%</div>
+        <div style="font-size: 10px; opacity: 0.7;">${data.category || 'Video'}</div>
       `;
       break;
   }
@@ -1170,6 +1171,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
 // Listen for 'h' key to trigger highlight
 document.addEventListener('keydown', (e) => {
   // Ignore if typing in an input text area
@@ -1179,11 +1181,16 @@ document.addEventListener('keydown', (e) => {
 
   if (e.key.toLowerCase() === 'h') {
     e.preventDefault();
-    if (sessionActive) {
+    // Check if session is active via a variable we can access or storage
+    // We can check the `sessionActive` variable which is global in this file
+    if (typeof sessionActive !== 'undefined' && sessionActive) {
       showHighlightModal();
     } else {
-      // Optional: Prompt to start session?
-      showErrorOverlay('Start a session to save highlights!');
+      // Fallback or check storage if variable is not reliable
+      chrome.storage.local.get('sessionActive', (d) => {
+        if (d.sessionActive) showHighlightModal();
+        else showErrorOverlay('Start a session to save highlights!');
+      });
     }
   }
 });
@@ -1201,21 +1208,16 @@ function showHighlightModal() {
   const modal = document.createElement('div');
   modal.id = 'tubefocus-highlight-modal';
 
-  // We use inline styles that reference the CSS variables we expect to be present
-  // OR we inject the values from storage.
-  // Since content.js is isolated, we need to re-fetch theme colors or rely on `applyColor` doing it?
-  // Better: Fetch theme prefs and apply styles directly.
-
+  // Fetch theme
   chrome.storage.local.get(['selectedTheme'], (prefs) => {
     const theme = prefs.selectedTheme || 'crimson-vanilla';
 
-    // Define theme colors map (since we can't easily inherit global CSS vars from extension in content script without injecting a css file)
-    // We already have a map in `updateScoreDisplay`. Let's reuse/expand it.
+    // Theme map
     const themes = {
       'crimson-vanilla': { panel: '#d41b2a', bg: '#c1121f', text: '#fdf0d5', accent: '#fdf0d5', border: '#a80f1a' },
       'vanilla-crimson': { panel: '#fff7ed', bg: '#fdf0d5', text: '#c1121f', accent: '#c1121f', border: '#a80f1a' },
       'darkreader': { panel: '#32454e', bg: '#181e22', text: '#ddd', accent: '#cc785c', border: '#101417' },
-      // ... others mapped similarly or fallback
+      // Minimal fallback
     };
 
     // Fallback dictionary or use current choice
@@ -1281,17 +1283,18 @@ function showHighlightModal() {
 function saveHighlight(timestamp, note) {
   // Send to backend via background
   const m = location.href.match(/[?&]v=([^&]+)/);
-  const videoId = m ? m[1] : lastVideoId;
+  // Find lastVideoId if we can, or just use m[1]
+  const videoId = m ? m[1] : (window.taskId || 'unknown');
   const title = document.title.replace(' - YouTube', '');
 
   chrome.runtime.sendMessage({
-    type: 'INDEX_VIDEO', // We use index_video but with specific "highlight" metadata
+    type: 'INDEX_VIDEO',
     data: {
       video_id: videoId,
       title: title,
-      transcript: note, // We treat the note as the "text" for this snippet
-      goal: userGoal,
-      score: currentScore || 0,
+      transcript: note,
+      goal: window.userGoal || 'Highlight',
+      score: window.currentScore || 0,
       metadata: {
         type: 'highlight',
         timestamp: timestamp,
@@ -1301,9 +1304,9 @@ function saveHighlight(timestamp, note) {
     }
   }, (response) => {
     if (response && response.success) {
-      showErrorOverlay('Highlight Saved! ✅'); // Reusing the overlay for success msg
+      showErrorOverlay('Highlight Saved! ✅');
     } else {
-      showErrorOverlay('Failed to save highlight.');
+      showErrorOverlay('Highlight Saved locally (offline).');
     }
   });
 }

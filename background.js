@@ -1,25 +1,14 @@
 // background.js
+console.log('[background] service worker started - CLOUD RUN MODE');
+console.log('[background] API Base URL:', 'https://yt-scorer-api-933573987016.us-central1.run.app');
+console.log('[background] Available endpoints: /score/detailed, /score/simple, /score/simple/fast, /feedback, /health');
 
-// ===== ENVIRONMENT CONFIGURATION =====
-// Set to 'local' for development or 'cloud' for production
-const ENVIRONMENT = 'cloud'; // Change to 'local' when developing locally
-
-const CONFIGS = {
-  local: {
-    API_BASE_URL: 'http://localhost:8080',
-    API_KEY: 'test_key'
-  },
-  cloud: {
-    API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',
-    API_KEY: 'test_key'
-  }
+// Configuration - CLOUD RUN
+const CONFIG = {
+  API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',
+  API_KEY: 'test_key'
+  // Note: Using Google Cloud Run deployment
 };
-
-const CONFIG = CONFIGS[ENVIRONMENT];
-
-console.log(`[background] service worker started - ${ENVIRONMENT.toUpperCase()} MODE`);
-console.log('[background] API Base URL:', CONFIG.API_BASE_URL);
-console.log('[background] Available endpoints: /score/simple, /score/detailed, /audit, /coach/analyze, /librarian/index');
 
 const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;
 
@@ -205,7 +194,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           // If it's a 404 error with the fast endpoint, try the regular endpoint
           if (msg.scoringType === 'simple' && endpoint.includes('/fast') && err.message.includes('404')) {
-            console.log('[background] Fast endpoint not found, trying regular /score endpoint');
+            console.log('[background] Fast endpoint not found, trying regular /score/simple endpoint');
             const fallbackEndpoint = `${CONFIG.API_BASE_URL}/score/simple`;
 
             fetch(fallbackEndpoint, {
@@ -254,7 +243,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // Keep the message channel open for sendResponse
     } else if (msg.type === 'AUDIT_VIDEO') {
       console.log('[background] AUDIT_VIDEO request for:', msg.videoId);
-
+      
       // Call the auditor endpoint
       const endpoint = `${CONFIG.API_BASE_URL}/audit`;
       const requestBody = {
@@ -264,7 +253,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         goal: msg.goal,
         transcript: msg.transcript || null
       };
-
+      
       fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -290,7 +279,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // Keep the message channel open for sendResponse
     } else if (msg.type === 'COACH_ANALYZE') {
       console.log('[background] COACH_ANALYZE request for session:', msg.sessionId);
-
+      
       // Call the coach endpoint
       const endpoint = `${CONFIG.API_BASE_URL}/coach/analyze`;
       const requestBody = {
@@ -298,7 +287,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         goal: msg.goal,
         session_data: msg.sessionData
       };
-
+      
       fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -324,7 +313,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // Keep the message channel open for sendResponse
     } else if (msg.type === 'LIBRARIAN_INDEX') {
       console.log('[background] LIBRARIAN_INDEX request for video:', msg.videoId);
-
+      
       // Call the librarian index endpoint
       const endpoint = `${CONFIG.API_BASE_URL}/librarian/index`;
       const requestBody = {
@@ -334,7 +323,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         goal: msg.goal,
         score: msg.score
       };
-
+      
       fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -360,14 +349,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // Keep the message channel open for sendResponse
     } else if (msg.type === 'LIBRARIAN_SEARCH') {
       console.log('[background] LIBRARIAN_SEARCH request:', msg.query);
-
+      
       // Call the librarian search endpoint
       const endpoint = `${CONFIG.API_BASE_URL}/librarian/search`;
       const requestBody = {
         query: msg.query,
         n_results: msg.n_results || 5
       };
-
+      
       fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -393,7 +382,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // Keep the message channel open for sendResponse
     } else if (msg.type === 'SAVE_HIGHLIGHT') {
       console.log('[background] SAVE_HIGHLIGHT request:', msg.highlight.videoId, '@', msg.highlight.timestampFormatted);
-
+      
       // Store highlight locally first (for offline access)
       chrome.storage.local.get(['highlights'], (data) => {
         const highlights = data.highlights || [];
@@ -402,7 +391,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           console.log('[background] Highlight saved locally, total:', highlights.length);
         });
       });
-
+      
       // Also send to backend for indexing (if transcript available)
       if (msg.highlight.transcript) {
         const endpoint = `${CONFIG.API_BASE_URL}/librarian/index`;
@@ -420,7 +409,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             note: msg.highlight.note
           }
         };
-
+        
         fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -446,11 +435,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     } else if (msg.type === 'WATCH_STATUS_UPDATE') {
       // Store watch time for coach
-      chrome.storage.local.set({
+      chrome.storage.local.set({ 
         totalWatchTime: msg.totalWatchTimeSeconds,
         lastWatchUpdate: Date.now()
       });
-
+      
       // Optionally notify coach about watch status
       console.log('[background] Watch status updated:', msg.totalWatchTimeSeconds, 'seconds');
     } else if (msg.type === 'GET_HIGHLIGHTS') {
