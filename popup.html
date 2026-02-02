@@ -107,11 +107,35 @@
           style="flex: 1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); font-size: 0.85em; padding: 10px;">
           <span>📚 Save to Library</span>
         </button>
+        <button id="auditButton" class="action"
+          style="flex: 1; background: linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%); font-size: 0.85em; padding: 10px;">
+          <span>🧐 Deep Analyze</span>
+        </button>
+      </div>
+
+      <div style="margin-top: 8px; display: flex; gap: 8px;">
         <button id="highlightButton" class="action"
           style="flex: 1; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); font-size: 0.85em; padding: 10px;">
           <span>✨ Highlight Section</span>
         </button>
       </div>
+
+      <!-- Auditor Results -->
+      <div id="auditResult"
+        style="margin-top: 12px; padding: 10px; background: var(--panel); border-radius: 6px; border: 1px solid var(--border); display: none;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+          <span style="font-weight: bold;">Clickbait Score:</span>
+          <span id="clickbaitScore" style="font-weight: bold; color: var(--accent);">--</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+          <span style="font-weight: bold;">Info Density:</span>
+          <span id="densityScore" style="font-weight: bold; color: var(--accent);">--</span>
+        </div>
+        <div style="margin-top: 6px; font-size: 0.9em; font-style: italic; color: var(--text);">
+          Recommendation: <span id="auditRecommendation">--</span>
+        </div>
+      </div>
+
       <div id="saveVideoStatus" style="font-size: 0.8em; text-align: center; margin-top: 8px; color: #999;"></div>
     </section>
 

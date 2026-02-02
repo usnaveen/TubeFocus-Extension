@@ -298,6 +298,99 @@ function updateSessionStats(prefs) {
   }
 }
 
+// --- Auditor Agent Handler ---
+const auditButton = document.getElementById('auditButton');
+const auditResult = document.getElementById('auditResult');
+const clickbaitScoreEl = document.getElementById('clickbaitScore');
+const densityScoreEl = document.getElementById('densityScore');
+const auditRecommendationEl = document.getElementById('auditRecommendation');
+
+if (auditButton) {
+  auditButton.addEventListener('click', async () => {
+    console.log('[Auditor] Button clicked');
+
+    // UI Feedback
+    auditButton.disabled = true;
+    auditButton.querySelector('span').textContent = '⏳ Analyzing...';
+    auditResult.style.display = 'none';
+
+    try {
+      // Get current tab
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab.url || !tab.url.includes('youtube.com/watch')) {
+        saveVideoStatus.textContent = '❌ Not on a YouTube video page';
+        saveVideoStatus.style.color = '#ef4444';
+        setTimeout(() => {
+          saveVideoStatus.textContent = '';
+          auditButton.disabled = false;
+          auditButton.querySelector('span').textContent = '🧐 Deep Analyze';
+        }, 3000);
+        return;
+      }
+
+      // Extract video ID
+      const videoIdMatch = tab.url.match(/[?&]v=([^&]+)/);
+      if (!videoIdMatch) {
+        throw new Error("Could not extract video ID");
+      }
+      const videoId = videoIdMatch[1];
+
+      // Get goal from storage
+      chrome.storage.local.get(['goal'], async (prefs) => {
+        const goal = prefs.goal || 'General learning';
+
+        chrome.runtime.sendMessage({
+          type: 'AUDIT_VIDEO',
+          videoId: videoId,
+          title: tab.title.replace(' - YouTube', ''),
+          goal: goal
+        }, (response) => {
+          // Re-enable button
+          auditButton.disabled = false;
+          auditButton.querySelector('span').textContent = '🧐 Deep Analyze';
+
+          if (chrome.runtime.lastError) {
+            console.error('[Auditor] Error:', chrome.runtime.lastError);
+            saveVideoStatus.textContent = '❌ Analysis failed';
+            saveVideoStatus.style.color = '#ef4444';
+            return;
+          }
+
+          if (response && response.success && response.analysis) {
+            const analysis = response.analysis;
+
+            // Show results
+            auditResult.style.display = 'block';
+
+            // Update UI
+            clickbaitScoreEl.textContent = `${analysis.clickbait_score}/100`;
+            clickbaitScoreEl.style.color = analysis.clickbait_score > 70 ? '#ef4444' : '#10b981';
+
+            densityScoreEl.textContent = `${analysis.density_score}/100`;
+
+            let recIcon = '🤔';
+            if (analysis.recommendation === 'watch') recIcon = '✅';
+            if (analysis.recommendation === 'skip') recIcon = '🚫';
+            if (analysis.recommendation === 'skim') recIcon = '⏩';
+
+            auditRecommendationEl.textContent = `${recIcon} ${analysis.recommendation.toUpperCase()}`;
+          } else {
+            saveVideoStatus.textContent = '❌ Analysis failed';
+            saveVideoStatus.style.color = '#ef4444';
+          }
+        });
+      });
+
+    } catch (error) {
+      console.error('[Auditor] Error:', error);
+      auditButton.disabled = false;
+      auditButton.querySelector('span').textContent = '🧐 Deep Analyze';
+      saveVideoStatus.textContent = '❌ Error';
+    }
+  });
+}
+
 // --- Coach Mode Handler ---
 if (coachModeSelect) {
   coachModeSelect.addEventListener('change', () => {
