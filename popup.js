@@ -1,12 +1,12 @@
 // popup.js
 
 // --- DOM references ---
-const goalInput      = document.getElementById('goalInput');
+const goalInput = document.getElementById('goalInput');
 const sessionDurationInput = document.getElementById('sessionDuration');
-const startBtn       = document.getElementById('startSession');
-const stopBtn        = document.getElementById('stopSession');
+const startBtn = document.getElementById('startSession');
+const stopBtn = document.getElementById('stopSession');
 const summaryMessage = document.getElementById('summaryMessage');
-const chartCanvas    = document.getElementById('scoreChart').getContext('2d');
+const chartCanvas = document.getElementById('scoreChart').getContext('2d');
 
 // Coach stats elements
 const videosWatchedEl = document.getElementById('videosWatched');
@@ -25,10 +25,10 @@ const saveVideoButton = document.getElementById('saveVideoButton');
 const saveVideoStatus = document.getElementById('saveVideoStatus');
 const highlightButton = document.getElementById('highlightButton');
 
-const toggleOnBtn    = document.getElementById('toggleOn');
-const toggleOffBtn   = document.getElementById('toggleOff');
-const tabs           = document.querySelectorAll('.tabs button');
-const sections       = document.querySelectorAll('section');
+const toggleOnBtn = document.getElementById('toggleOn');
+const toggleOffBtn = document.getElementById('toggleOff');
+const tabs = document.querySelectorAll('.tabs button');
+const sections = document.querySelectorAll('section');
 
 
 
@@ -37,30 +37,38 @@ const themeSelector = document.getElementById('themeSelector');
 
 // --- Positive / negative feedback arrays ---
 const positiveMsgs = [
-    "Incredible focus! You're on a roll.",
-    "Amazing work! You're making real progress toward your goal.",
-    "That was a masterclass in concentration. Bravo!",
-    "Your dedication is paying off. Keep up the great work!",
-    "Excellent session! You stayed right on target.",
-    "Productivity level: Expert. Well done!",
-    "You're a learning machine! Nothing can stop you.",
-    "You're crushing your goals. Awesome job!",
-    "Your focus is inspiring. Keep that momentum going!",
-    "Top-tier performance! You should be proud of this session."
+  "Incredible focus! You're on a roll.",
+  "Amazing work! You're making real progress toward your goal.",
+  "That was a masterclass in concentration. Bravo!",
+  "Your dedication is paying off. Keep up the great work!",
+  "Excellent session! You stayed right on target.",
+  "Productivity level: Expert. Well done!",
+  "You're a learning machine! Nothing can stop you.",
+  "You're crushing your goals. Awesome job!",
+  "Your focus is inspiring. Keep that momentum going!",
+  "Top-tier performance! You should be proud of this session."
 ];
 const negativeMsgs = [
-    "A little scattered, but every step is part of the journey. Let's refocus.",
-    "It seems you got a bit sidetracked. Let's try to stick to the goal next time.",
-    "Not every session is perfect. What can we improve for the next one?",
-    "A challenging session, but don't give up. The next one will be better.",
-    "Focus is a muscle. Let's keep training it together.",
-    "Okay, let's analyze what happened and come back stronger.",
-    "Remember your goal. Let's aim for higher scores next time.",
-    "Don't be discouraged. Learning has its ups and downs.",
-    "A slight detour, but the destination is still the same. You can do it.",
-    "Let's tighten up the focus for the next session. You've got this."
+  "A little scattered, but every step is part of the journey. Let's refocus.",
+  "It seems you got a bit sidetracked. Let's try to stick to the goal next time.",
+  "Not every session is perfect. What can we improve for the next one?",
+  "A challenging session, but don't give up. The next one will be better.",
+  "Focus is a muscle. Let's keep training it together.",
+  "Okay, let's analyze what happened and come back stronger.",
+  "Remember your goal. Let's aim for higher scores next time.",
+  "Don't be discouraged. Learning has its ups and downs.",
+  "A slight detour, but the destination is still the same. You can do it.",
+  "Let's tighten up the focus for the next session. You've got this."
 ];
 // --- END OF ARRAYS ---
+
+// --- Dashboard Button ---
+const openDashboardBtn = document.getElementById('openDashboard');
+if (openDashboardBtn) {
+  openDashboardBtn.addEventListener('click', () => {
+    chrome.tabs.create({ url: 'dashboard/index.html' });
+  });
+}
 
 // --- Chart.js setup ---
 let scoreChart;
@@ -69,12 +77,12 @@ function initChart(labels = [], data = []) {
   scoreChart = new Chart(chartCanvas, {
     type: 'line',
     data: {
-      labels, 
-      datasets: [{ 
-        label: 'Score per Video', 
-        data, 
-        fill: false, 
-        borderWidth: 2, 
+      labels,
+      datasets: [{
+        label: 'Score per Video',
+        data,
+        fill: false,
+        borderWidth: 2,
         borderColor: 'rgba(204, 120, 92, 1)',
         pointBackgroundColor: 'rgba(204, 120, 92, 1)',
         pointBorderColor: 'rgba(204, 120, 92, 1)',
@@ -87,43 +95,43 @@ function initChart(labels = [], data = []) {
       maintainAspectRatio: true,
       aspectRatio: 2,
       scales: {
-        x: { 
-            title: { 
-              display: true, 
-              text: 'Video #',
-              color: '#ddd',
-              font: { size: 10 }
-            },
-            ticks: { 
-              color: '#ddd',
-              font: { size: 9 }
-            },
-            grid: { color: 'rgba(75, 108, 121, 0.3)' }
+        x: {
+          title: {
+            display: true,
+            text: 'Video #',
+            color: '#ddd',
+            font: { size: 10 }
+          },
+          ticks: {
+            color: '#ddd',
+            font: { size: 9 }
+          },
+          grid: { color: 'rgba(75, 108, 121, 0.3)' }
         },
-        y: { 
-            title: { 
-              display: true, 
-              text: 'Score', 
-              color: '#ddd',
-              font: { size: 10 }
-            }, 
-            min: 0, 
-            max: 100,
-            ticks: { 
-              color: '#ddd',
-              font: { size: 9 },
-              stepSize: 20,
-              callback: function(value) {
-                return value + '%';
-              }
-            },
-            grid: { color: 'rgba(75, 108, 121, 0.3)' }
+        y: {
+          title: {
+            display: true,
+            text: 'Score',
+            color: '#ddd',
+            font: { size: 10 }
+          },
+          min: 0,
+          max: 100,
+          ticks: {
+            color: '#ddd',
+            font: { size: 9 },
+            stepSize: 20,
+            callback: function (value) {
+              return value + '%';
+            }
+          },
+          grid: { color: 'rgba(75, 108, 121, 0.3)' }
         }
       },
       plugins: {
-          legend: {
-              display: false
-          }
+        legend: {
+          display: false
+        }
       }
     }
   });
@@ -137,14 +145,14 @@ function sendToContent(message) {
       console.warn('No active YouTube tab found.');
       return;
     }
-    
+
     // Check if we're on a YouTube page before sending message
     const url = tabs[0]?.url || '';
     if (!url.includes('youtube.com')) {
       console.log('Not on YouTube page, skipping message send');
       return;
     }
-    
+
     chrome.tabs.sendMessage(id, message, () => {
       if (chrome.runtime.lastError) {
         // This is expected if the content script is not loaded (e.g., not a YouTube tab)
@@ -191,7 +199,7 @@ function updateUI(state) {
   startBtn.disabled = sessionActive;
   stopBtn.disabled = !sessionActive;
   goalInput.value = goal || '';
-  
+
   // Update coach mode if provided
   if (coachMode && coachModeSelect) {
     coachModeSelect.value = coachMode;
@@ -236,7 +244,7 @@ function updateUI(state) {
       }
     });
   });
-  
+
   // Update session stats
   updateSessionStats(state);
 }
@@ -245,17 +253,17 @@ function updateUI(state) {
 function updateSessionStats(prefs) {
   const watchedScores = prefs.watchedScores || [];
   const sessionActive = prefs.sessionActive || false;
-  
+
   // Update video count
   videosWatchedEl.textContent = watchedScores.length;
-  
+
   // Update average score
   if (watchedScores.length > 0) {
     const avg = watchedScores.reduce((a, b) => a + b, 0) / watchedScores.length;
     // Handle both decimal and percentage formats
     const avgPercentage = avg > 1 ? avg : (avg * 100);
     averageScoreEl.textContent = avgPercentage.toFixed(1) + '%';
-    
+
     // Color code based on average
     if (avgPercentage >= 70) {
       averageScoreEl.style.color = '#4ade80';
@@ -268,7 +276,7 @@ function updateSessionStats(prefs) {
     averageScoreEl.textContent = '–';
     averageScoreEl.style.color = '';
   }
-  
+
   // Update current score
   if (prefs.currentScore != null) {
     const score = prefs.currentScore;
@@ -277,7 +285,7 @@ function updateSessionStats(prefs) {
   } else {
     currentScoreEl.textContent = '–';
   }
-  
+
   // Update session status
   if (sessionActive) {
     sessionStatusEl.classList.add('active');
@@ -288,6 +296,99 @@ function updateSessionStats(prefs) {
     sessionStatusEl.classList.remove('active');
     sessionStatusEl.title = 'No Active Session';
   }
+}
+
+// --- Auditor Agent Handler ---
+const auditButton = document.getElementById('auditButton');
+const auditResult = document.getElementById('auditResult');
+const clickbaitScoreEl = document.getElementById('clickbaitScore');
+const densityScoreEl = document.getElementById('densityScore');
+const auditRecommendationEl = document.getElementById('auditRecommendation');
+
+if (auditButton) {
+  auditButton.addEventListener('click', async () => {
+    console.log('[Auditor] Button clicked');
+
+    // UI Feedback
+    auditButton.disabled = true;
+    auditButton.querySelector('span').textContent = '⏳ Analyzing...';
+    auditResult.style.display = 'none';
+
+    try {
+      // Get current tab
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab.url || !tab.url.includes('youtube.com/watch')) {
+        saveVideoStatus.textContent = '❌ Not on a YouTube video page';
+        saveVideoStatus.style.color = '#ef4444';
+        setTimeout(() => {
+          saveVideoStatus.textContent = '';
+          auditButton.disabled = false;
+          auditButton.querySelector('span').textContent = '🧐 Deep Analyze';
+        }, 3000);
+        return;
+      }
+
+      // Extract video ID
+      const videoIdMatch = tab.url.match(/[?&]v=([^&]+)/);
+      if (!videoIdMatch) {
+        throw new Error("Could not extract video ID");
+      }
+      const videoId = videoIdMatch[1];
+
+      // Get goal from storage
+      chrome.storage.local.get(['goal'], async (prefs) => {
+        const goal = prefs.goal || 'General learning';
+
+        chrome.runtime.sendMessage({
+          type: 'AUDIT_VIDEO',
+          videoId: videoId,
+          title: tab.title.replace(' - YouTube', ''),
+          goal: goal
+        }, (response) => {
+          // Re-enable button
+          auditButton.disabled = false;
+          auditButton.querySelector('span').textContent = '🧐 Deep Analyze';
+
+          if (chrome.runtime.lastError) {
+            console.error('[Auditor] Error:', chrome.runtime.lastError);
+            saveVideoStatus.textContent = '❌ Analysis failed';
+            saveVideoStatus.style.color = '#ef4444';
+            return;
+          }
+
+          if (response && response.success && response.analysis) {
+            const analysis = response.analysis;
+
+            // Show results
+            auditResult.style.display = 'block';
+
+            // Update UI
+            clickbaitScoreEl.textContent = `${analysis.clickbait_score}/100`;
+            clickbaitScoreEl.style.color = analysis.clickbait_score > 70 ? '#ef4444' : '#10b981';
+
+            densityScoreEl.textContent = `${analysis.density_score}/100`;
+
+            let recIcon = '🤔';
+            if (analysis.recommendation === 'watch') recIcon = '✅';
+            if (analysis.recommendation === 'skip') recIcon = '🚫';
+            if (analysis.recommendation === 'skim') recIcon = '⏩';
+
+            auditRecommendationEl.textContent = `${recIcon} ${analysis.recommendation.toUpperCase()}`;
+          } else {
+            saveVideoStatus.textContent = '❌ Analysis failed';
+            saveVideoStatus.style.color = '#ef4444';
+          }
+        });
+      });
+
+    } catch (error) {
+      console.error('[Auditor] Error:', error);
+      auditButton.disabled = false;
+      auditButton.querySelector('span').textContent = '🧐 Deep Analyze';
+      saveVideoStatus.textContent = '❌ Error';
+    }
+  });
 }
 
 // --- Coach Mode Handler ---
@@ -308,17 +409,17 @@ if (coachModeSelect) {
 if (highlightButton) {
   highlightButton.addEventListener('click', async () => {
     console.log('[Highlight] Button clicked');
-    
+
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
+
       if (!tab.url || !tab.url.includes('youtube.com/watch')) {
         saveVideoStatus.textContent = '❌ Not on a YouTube video page';
         saveVideoStatus.style.color = '#ef4444';
         setTimeout(() => { saveVideoStatus.textContent = ''; }, 3000);
         return;
       }
-      
+
       // Send message to content script to capture current timestamp and open highlight modal
       chrome.tabs.sendMessage(tab.id, { type: 'CREATE_HIGHLIGHT' }, (response) => {
         if (chrome.runtime.lastError) {
@@ -331,7 +432,7 @@ if (highlightButton) {
         }
         setTimeout(() => { saveVideoStatus.textContent = ''; }, 3000);
       });
-      
+
     } catch (error) {
       console.error('[Highlight] Error:', error);
       saveVideoStatus.textContent = '❌ Error creating highlight';
@@ -345,16 +446,16 @@ if (highlightButton) {
 if (saveVideoButton) {
   saveVideoButton.addEventListener('click', async () => {
     console.log('[Save Video] Button clicked');
-    
+
     // Disable button during processing
     saveVideoButton.disabled = true;
-    saveVideoStatus.textContent = '⏳ Extracting transcript...';
+    saveVideoStatus.textContent = '⏳ Preparing save...';
     saveVideoStatus.style.color = '#3b82f6';
-    
+
     try {
       // Get current tab (should be YouTube)
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
+
       if (!tab.url || !tab.url.includes('youtube.com/watch')) {
         saveVideoStatus.textContent = '❌ Not on a YouTube video page';
         saveVideoStatus.style.color = '#ef4444';
@@ -364,7 +465,7 @@ if (saveVideoButton) {
         }, 3000);
         return;
       }
-      
+
       // Extract video ID from URL
       const videoIdMatch = tab.url.match(/[?&]v=([^&]+)/);
       if (!videoIdMatch) {
@@ -376,65 +477,72 @@ if (saveVideoButton) {
         }, 3000);
         return;
       }
-      
+
       const videoId = videoIdMatch[1];
       console.log('[Save Video] Video ID:', videoId);
-      
-      // Request transcript scraping from content script
+
+      // Try transcript extraction first; fallback to link + user description.
       chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_TRANSCRIPT' }, async (response) => {
         if (chrome.runtime.lastError) {
           console.error('[Save Video] Error:', chrome.runtime.lastError);
-          saveVideoStatus.textContent = '❌ Error communicating with page';
-          saveVideoStatus.style.color = '#ef4444';
-          setTimeout(() => {
-            saveVideoStatus.textContent = '';
-            saveVideoButton.disabled = false;
-          }, 3000);
-          return;
+          // Continue with link-only save when transcript request fails.
         }
-        
-        if (!response || !response.success) {
-          saveVideoStatus.textContent = `❌ ${response?.error || 'Failed to extract transcript'}`;
-          saveVideoStatus.style.color = '#ef4444';
-          setTimeout(() => {
-            saveVideoStatus.textContent = '';
-            saveVideoButton.disabled = false;
-          }, 5000);
-          return;
+
+        const transcript = response?.success ? (response.transcript || '') : '';
+        let description = '';
+
+        if (transcript) {
+          console.log('[Save Video] Transcript scraped:', response.charCount, 'chars');
+          saveVideoStatus.textContent = `✓ Extracted ${response.segmentCount} segments. Saving...`;
+        } else {
+          saveVideoStatus.textContent = 'Transcript unavailable. Waiting for description...';
+          saveVideoStatus.style.color = '#f59e0b';
+          description = (window.prompt('Transcript unavailable. Add a short description to save this video link:') || '').trim();
+          if (!description) {
+            saveVideoStatus.textContent = '❌ Save cancelled. Description is required without transcript.';
+            saveVideoStatus.style.color = '#ef4444';
+            setTimeout(() => {
+              saveVideoStatus.textContent = '';
+              saveVideoButton.disabled = false;
+            }, 3500);
+            return;
+          }
+          saveVideoStatus.textContent = 'Saving link + description...';
+          saveVideoStatus.style.color = '#3b82f6';
         }
-        
-        console.log('[Save Video] Transcript scraped:', response.charCount, 'chars');
-        saveVideoStatus.textContent = `✓ Extracted ${response.segmentCount} segments. Saving...`;
-        
+
         // Get current goal
         chrome.storage.local.get(['goal', 'currentScore'], async (prefs) => {
           const goal = prefs.goal || 'General learning';
           const score = prefs.currentScore || 50;
-          
-          // Send to Librarian for indexing
+
+          // Send unified save request.
           chrome.runtime.sendMessage({
-            type: 'LIBRARIAN_INDEX',
-            videoId: videoId,
+            type: 'LIBRARIAN_SAVE_ITEM',
+            video_id: videoId,
             title: tab.title.replace(' - YouTube', ''),
-            transcript: response.transcript,
+            transcript: transcript,
+            description: description,
+            video_url: tab.url,
             goal: goal,
             score: score
-          }, (indexResponse) => {
+          }, (saveResponse) => {
             if (chrome.runtime.lastError) {
-              console.error('[Save Video] Index error:', chrome.runtime.lastError);
+              console.error('[Save Video] Save error:', chrome.runtime.lastError);
               saveVideoStatus.textContent = '❌ Failed to save to library';
               saveVideoStatus.style.color = '#ef4444';
-            } else if (indexResponse && indexResponse.success) {
-              saveVideoStatus.textContent = '✅ Saved to library!';
+            } else if (saveResponse && saveResponse.success) {
+              const modeLabel = saveResponse.save_mode === 'transcript' ? 'with transcript' : 'as link + description';
+              saveVideoStatus.textContent = `✅ Saved ${modeLabel}!`;
               saveVideoStatus.style.color = '#10b981';
-              
+
               // Refresh librarian stats
               loadLibrarianStats();
             } else {
-              saveVideoStatus.textContent = '❌ Failed to index video';
+              saveVideoStatus.textContent = `❌ ${saveResponse?.error || 'Failed to save video'}`;
               saveVideoStatus.style.color = '#ef4444';
             }
-            
+
             // Re-enable button
             setTimeout(() => {
               saveVideoStatus.textContent = '';
@@ -443,7 +551,7 @@ if (saveVideoButton) {
           });
         });
       });
-      
+
     } catch (error) {
       console.error('[Save Video] Error:', error);
       saveVideoStatus.textContent = '❌ Unexpected error';
@@ -470,7 +578,7 @@ chrome.storage.local.get(['sessionActive', 'goal', 'coachMode', 'coachInstructio
   if (prefs.coachInstructions && coachInstructionsInput) {
     coachInstructionsInput.value = prefs.coachInstructions;
   }
-  
+
   // Update watch time display
   if (watchTimeEl && prefs.totalWatchTime) {
     const mins = Math.floor(prefs.totalWatchTime / 60);
@@ -481,7 +589,7 @@ chrome.storage.local.get(['sessionActive', 'goal', 'coachMode', 'coachInstructio
   const theme = prefs.selectedTheme || 'crimson-vanilla';
   document.documentElement.setAttribute('data-theme', theme);
   themeSelector.value = theme;
-  
+
   // If session just ended and there are scores to show, switch to summary tab
   if (!prefs.sessionActive && prefs.watchedScores && prefs.watchedScores.length > 0 && prefs.showSummaryOnOpen) {
     const summaryTab = document.querySelector('[data-tab="summary"]');
@@ -569,10 +677,10 @@ if (coachInstructionsInput) {
 // --- Coach Message Display ---
 function showCoachMessage(message, type = 'info') {
   if (!coachMessageEl || !coachTextEl) return;
-  
+
   coachTextEl.textContent = message;
   coachMessageEl.style.display = 'block';
-  
+
   // Style based on message type
   if (type === 'success') {
     coachMessageEl.style.borderLeftColor = '#10b981';
@@ -604,14 +712,14 @@ startBtn.addEventListener('click', () => {
   const coachMode = coachModeSelect ? coachModeSelect.value : 'balanced';
   const coachInstructions = coachInstructionsInput ? coachInstructionsInput.value : '';
 
-  chrome.runtime.sendMessage({ 
-    type: 'START_SESSION', 
-    duration, 
+  chrome.runtime.sendMessage({
+    type: 'START_SESSION',
+    duration,
     goal,
     coachMode,
     coachInstructions
   });
-  
+
   // Send message to content.js to start session
   sendToContent({ type: 'START_SESSION', goal, coachMode, coachInstructions });
 });
@@ -634,7 +742,7 @@ chrome.runtime.onMessage.addListener(msg => {
     const score = msg.score;
     const percentage = score > 1 ? score : (score * 100);
     if (currentScoreEl) currentScoreEl.textContent = percentage.toFixed(1) + '%';
-    
+
     // Update coach stats
     chrome.storage.local.get(['watchedScores', 'sessionActive', 'currentScore'], (prefs) => {
       updateSessionStats(prefs);
@@ -667,9 +775,9 @@ function renderSummary() {
     const scores = data.watchedScores || [];
     const sessionActive = data.sessionActive || false;
     console.log('Retrieved scores for chart:', scores, 'Session active:', sessionActive);
-    
+
     const count = scores.length;
-    
+
     if (count === 0) {
       // No session data to show
       if (sessionActive) {
@@ -686,12 +794,12 @@ function renderSummary() {
       initChart([], []); // Empty chart
       return;
     }
-    
+
     // Handle both decimal (0.52) and percentage (52) formats for scores
     const normalizedScores = scores.map(score => score > 1 ? score / 100 : score);
-    const avg = count ? (normalizedScores.reduce((a,b)=>a+b,0)/count * 100).toFixed(1) : 0;
+    const avg = count ? (normalizedScores.reduce((a, b) => a + b, 0) / count * 100).toFixed(1) : 0;
     const msgs = avg >= 60 ? positiveMsgs : negativeMsgs;
-    const feedback = msgs[Math.floor(Math.random()*msgs.length)];
+    const feedback = msgs[Math.floor(Math.random() * msgs.length)];
 
     // Show different message based on session state
     const sessionStatus = sessionActive ? "Current session" : "Last session";
@@ -699,11 +807,11 @@ function renderSummary() {
       <div>${sessionStatus}: ${count} videos • Avg: ${avg}%</div>
       <div class="feedback">${feedback || ''}</div>
     `;
-    
+
     // Convert normalized scores (0-1) to percentage (0-100) for the chart
     const chartScores = normalizedScores.map(score => score * 100);
     console.log('Chart scores (normalized to 0-100):', chartScores);
-    initChart(scores.map((_,i)=>i+1), chartScores);
+    initChart(scores.map((_, i) => i + 1), chartScores);
   });
 }
 
@@ -724,8 +832,8 @@ if (historyTab) {
 function loadLibrarianStats() {
   // This is a placeholder - in production, this would call the backend
   // For now, show placeholder text
-  indexedCountEl.textContent = 'N/A (Backend needed)';
-  chunksCountEl.textContent = 'N/A (Backend needed)';
+  if (indexedCountEl) indexedCountEl.textContent = 'N/A (Backend needed)';
+  if (chunksCountEl) chunksCountEl.textContent = 'N/A (Backend needed)';
 }
 
 if (searchButton && historySearchInput) {
@@ -739,7 +847,7 @@ if (searchButton && historySearchInput) {
 
 function performSearch() {
   const query = historySearchInput.value.trim();
-  
+
   if (!query) {
     searchResults.innerHTML = `
       <div style="text-align: center; color: #f87171; font-size: 0.9em;">
@@ -748,13 +856,13 @@ function performSearch() {
     `;
     return;
   }
-  
+
   searchResults.innerHTML = `
     <div style="text-align: center; color: #999; font-size: 0.9em;">
       Searching for "${query}"...
     </div>
   `;
-  
+
   // Call backend search endpoint
   chrome.runtime.sendMessage({
     type: 'LIBRARIAN_SEARCH',
@@ -769,7 +877,7 @@ function performSearch() {
       `;
       return;
     }
-    
+
     displaySearchResults(response);
   });
 }
@@ -783,9 +891,9 @@ function displaySearchResults(response) {
     `;
     return;
   }
-  
+
   const results = response.search_results.results || [];
-  
+
   if (results.length === 0) {
     searchResults.innerHTML = `
       <div style="text-align: center; color: #999; font-size: 0.9em;">
@@ -795,9 +903,9 @@ function displaySearchResults(response) {
     `;
     return;
   }
-  
+
   let html = `<div style="font-size: 0.85em; color: #999; margin-bottom: 8px;">Found ${results.length} results:</div>`;
-  
+
   results.forEach(result => {
     const scoreColor = result.score >= 70 ? '#4ade80' : result.score >= 50 ? '#fbbf24' : '#f87171';
     html += `
@@ -811,7 +919,6 @@ function displaySearchResults(response) {
       </div>
     `;
   });
-  
+
   searchResults.innerHTML = html;
 }
-

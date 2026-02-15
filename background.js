@@ -7,7 +7,6 @@ console.log('[background] Available endpoints: /score/detailed, /score/simple, /
 const CONFIG = {
   API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',
   API_KEY: 'test_key'
-  // Note: Using Google Cloud Run deployment
 };
 
 const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;
@@ -112,8 +111,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           let description = '';
 
           try {
-            // Always use simple scoring endpoint
-            const endpoint = `${CONFIG.API_BASE_URL}/score/simple`;
+            // Use unified score endpoint
+            const endpoint = `${CONFIG.API_BASE_URL}/score`;
             const requestBody = {
               video_url: `https://www.youtube.com/watch?v=${msg.videoId}`,
               goal: prefs.goal,
@@ -160,8 +159,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     } else if (msg.type === 'FETCH_SCORE') {
       console.log('[background] FETCH_SCORE request', msg);
 
-      // Always use simple scoring endpoint
-      const endpoint = `${CONFIG.API_BASE_URL}/score/simple`;
+      // Use unified score endpoint
+      const endpoint = `${CONFIG.API_BASE_URL}/score`;
       const requestBody = {
         video_url: msg.url,
         goal: msg.goal,
@@ -194,8 +193,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           // If it's a 404 error with the fast endpoint, try the regular endpoint
           if (msg.scoringType === 'simple' && endpoint.includes('/fast') && err.message.includes('404')) {
-            console.log('[background] Fast endpoint not found, trying regular /score/simple endpoint');
-            const fallbackEndpoint = `${CONFIG.API_BASE_URL}/score/simple`;
+            console.log('[background] Fast endpoint not found, trying regular /score endpoint');
+            const fallbackEndpoint = `${CONFIG.API_BASE_URL}/score`;
 
             fetch(fallbackEndpoint, {
               method: 'POST',
@@ -243,7 +242,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // Keep the message channel open for sendResponse
     } else if (msg.type === 'AUDIT_VIDEO') {
       console.log('[background] AUDIT_VIDEO request for:', msg.videoId);
-      
+
       // Call the auditor endpoint
       const endpoint = `${CONFIG.API_BASE_URL}/audit`;
       const requestBody = {
@@ -253,7 +252,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         goal: msg.goal,
         transcript: msg.transcript || null
       };
-      
+
       fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -279,7 +278,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // Keep the message channel open for sendResponse
     } else if (msg.type === 'COACH_ANALYZE') {
       console.log('[background] COACH_ANALYZE request for session:', msg.sessionId);
-      
+
       // Call the coach endpoint
       const endpoint = `${CONFIG.API_BASE_URL}/coach/analyze`;
       const requestBody = {
@@ -287,7 +286,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         goal: msg.goal,
         session_data: msg.sessionData
       };
-      
+
       fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -313,7 +312,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // Keep the message channel open for sendResponse
     } else if (msg.type === 'LIBRARIAN_INDEX') {
       console.log('[background] LIBRARIAN_INDEX request for video:', msg.videoId);
-      
+
       // Call the librarian index endpoint
       const endpoint = `${CONFIG.API_BASE_URL}/librarian/index`;
       const requestBody = {
@@ -323,7 +322,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         goal: msg.goal,
         score: msg.score
       };
-      
+
       fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -349,14 +348,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // Keep the message channel open for sendResponse
     } else if (msg.type === 'LIBRARIAN_SEARCH') {
       console.log('[background] LIBRARIAN_SEARCH request:', msg.query);
-      
+
       // Call the librarian search endpoint
       const endpoint = `${CONFIG.API_BASE_URL}/librarian/search`;
       const requestBody = {
         query: msg.query,
         n_results: msg.n_results || 5
       };
-      
+
       fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -382,7 +381,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true; // Keep the message channel open for sendResponse
     } else if (msg.type === 'SAVE_HIGHLIGHT') {
       console.log('[background] SAVE_HIGHLIGHT request:', msg.highlight.videoId, '@', msg.highlight.timestampFormatted);
-      
+
       // Store highlight locally first (for offline access)
       chrome.storage.local.get(['highlights'], (data) => {
         const highlights = data.highlights || [];
@@ -391,7 +390,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           console.log('[background] Highlight saved locally, total:', highlights.length);
         });
       });
-      
+
       // Also send to backend for indexing (if transcript available)
       if (msg.highlight.transcript) {
         const endpoint = `${CONFIG.API_BASE_URL}/librarian/index`;
@@ -409,7 +408,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             note: msg.highlight.note
           }
         };
-        
+
         fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -435,11 +434,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     } else if (msg.type === 'WATCH_STATUS_UPDATE') {
       // Store watch time for coach
-      chrome.storage.local.set({ 
+      chrome.storage.local.set({
         totalWatchTime: msg.totalWatchTimeSeconds,
         lastWatchUpdate: Date.now()
       });
-      
+
       // Optionally notify coach about watch status
       console.log('[background] Watch status updated:', msg.totalWatchTimeSeconds, 'seconds');
     } else if (msg.type === 'GET_HIGHLIGHTS') {
@@ -447,6 +446,91 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       chrome.storage.local.get(['highlights'], (data) => {
         sendResponse({ highlights: data.highlights || [] });
       });
+      return true;
+    } else if (msg.type === 'GET_CHAPTERS') {
+      console.log('[background] GET_CHAPTERS request for:', msg.videoId);
+
+      const endpoint = `${CONFIG.API_BASE_URL}/navigator/chapters`;
+      const requestBody = { video_id: msg.videoId };
+
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': CONFIG.API_KEY
+        },
+        body: JSON.stringify(requestBody)
+      })
+        .then(res => res.json())
+        .then(data => {
+          console.log('[background] Navigator chapters received:', data);
+          sendResponse(data);
+        })
+        .catch(err => {
+          console.error('[background] Navigator chapters failed:', err);
+          sendResponse({ error: err.message, result: null });
+        });
+      return true;
+    } else if (msg.type === 'LIBRARIAN_SAVE_ITEM') {
+      console.log('[background] LIBRARIAN_SAVE_ITEM request:', msg.video_id);
+
+      const endpoint = `${CONFIG.API_BASE_URL}/librarian/save`;
+
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': CONFIG.API_KEY
+        },
+        body: JSON.stringify({
+          video_id: msg.video_id,
+          title: msg.title,
+          goal: msg.goal,
+          score: msg.score,
+          video_url: msg.video_url,
+          transcript: msg.transcript || '',
+          description: msg.description || ''
+        })
+      })
+        .then(res => res.json())
+        .then(data => {
+          console.log('[background] Save item result:', data);
+          sendResponse(data);
+        })
+        .catch(err => {
+          console.error('[background] Save item failed:', err);
+          sendResponse({ success: false, error: err.message });
+        });
+      return true;
+    } else if (msg.type === 'LIBRARIAN_SAVE_SUMMARY') {
+      console.log('[background] LIBRARIAN_SAVE_SUMMARY request:', msg.video_id);
+
+      const endpoint = `${CONFIG.API_BASE_URL}/librarian/save_summary`;
+
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': CONFIG.API_KEY
+        },
+        body: JSON.stringify({
+          video_id: msg.video_id,
+          title: msg.title,
+          goal: msg.goal,
+          video_url: msg.video_url,
+          summary: msg.summary,
+          source: msg.source || 'youtube_ask'
+        })
+      })
+        .then(res => res.json())
+        .then(data => {
+          console.log('[background] Summary save result:', data);
+          sendResponse(data);
+        })
+        .catch(err => {
+          console.error('[background] Summary save failed:', err);
+          sendResponse({ success: false, error: err.message });
+        });
       return true;
     }
 });

@@ -1,158 +1,362 @@
 # TubeFocus Chrome Extension
 
-## Overview
-TubeFocus is a Chrome extension that helps you stay focused and productive while watching YouTube. It scores each video you watch based on your study/work goal, gives you real-time feedback, and (optionally) uploads your session history for a witty, AI-generated summary.
+Chrome Extension (Manifest V3) that scores YouTube videos against your learning goal in real time, provides AI-powered coaching during study sessions, and builds a searchable library of everything you watch.
 
-## Features
-- **Session Goals:** Set a clear goal before starting a session (e.g., "Studying Calculus").
-- **Dual Scoring System:**
-  - **Simple Scoring**: Fast and reliable scoring using 5 sentence transformers with 3 modes:
-    - *Title Only*: Fastest scoring using only video title
-    - *Title + Description*: Standard scoring with full description
-    - *Title + Clean Description*: Smart filtering of description noise
-  - **Advanced Scoring**: Multi-factor analysis with customizable features:
-    - *Customizable Selection*: Choose 1-4 factors (Title, Description, Tags, Category)
-    - *Minimum 1 Required*: Ensures at least one factor is selected
-    - *Maximum All*: Can select all 4 factors for comprehensive analysis
-- **Advanced ML Scoring:** Uses ensemble of sentence transformers and zero-shot classification models for accurate relevance scoring.
-- **Visual Feedback:** The extension overlays a color gradient on YouTube:
-  - Green = highly relevant
-  - Red = off-topic
-  - Gradient transitions for nuance
-- **Session Tracking (Privacy-Respecting):**
-  - Toggle to enable/disable sharing your session history for summary analysis.
-  - When enabled, video titles/descriptions are uploaded at session end for a witty summary (and then deleted locally).
-- **Witty Session Summary:**
-  - At session end, get a fun, goal-aware summary powered by Google Gemini 1.5 Flash (if sharing is enabled).
-- **Modern UI:**
-  - iOS-style toggle in a dedicated settings page
-  - Responsive popup with tabs for Setup, Current, and Summary
+## How It Works
+
+```mermaid
+graph LR
+    subgraph "YouTube Page"
+        V[Video Playing]
+        CS[Content Script<br/>content.js]
+        SD[Score Display<br/>Badge + Color Overlay]
+        CN[Coach Notification<br/>Slide-in Panel]
+        HM[Highlight Modal]
+    end
+
+    subgraph "Extension Layer"
+        BG[Background Service Worker<br/>background.js]
+        PU[Popup UI<br/>popup.html + popup.js]
+        ST[Chrome Storage<br/>Session State]
+    end
+
+    subgraph "Backend API"
+        API[Flask API on Cloud Run]
+    end
+
+    V -->|URL change detected| CS
+    CS -->|videoData message| BG
+    BG -->|POST /score| API
+    API -->|score + reasoning| BG
+    BG -->|NEW_SCORE message| CS
+    CS --> SD
+    CS --> CN
+    PU <-->|chrome.storage| ST
+    PU -->|START_SESSION| BG
+    BG <-->|chrome.storage| ST
+    CS <-->|chrome.storage| ST
+```
 
 ## Architecture
 
-### Frontend (Chrome Extension)
-- **popup.html/js**: Main extension interface with tabs for setup, current session, and summary
-- **content.js**: YouTube page integration and visual overlay
-- **background.js**: Session management and API communication
-- **styles.css**: Modern, responsive styling
+The extension follows Chrome's Manifest V3 architecture with three isolated execution contexts communicating via message passing and shared storage.
 
-### Backend Services
-The project includes two backend implementations:
+```mermaid
+graph TB
+    subgraph "Content Script Context (youtube.com)"
+        CS_MAIN["Main Loop<br/><code>setInterval(tryScore, 1000)</code>"]
+        CS_SCORE["Score Display<br/>Floating badge + page color"]
+        CS_TRANS["Transcript Scraper<br/>YouTube UI extraction"]
+        CS_COACH["Coach Monitor<br/>2-min check interval"]
+        CS_WATCH["Watch Detector<br/>Play state + visibility"]
+        CS_HL["Highlight System<br/>Modal + timestamp capture"]
+    end
 
-#### 1. Development Container
-Located in `YouTube Productivity Score Development Container/`
-- **Dual Scoring System**: Both Simple and Advanced scoring approaches
-- **Simple Scoring**: 5 sentence transformers with 3 modes (title_only, title_and_description, title_and_clean_desc)
-- **Advanced ML Models**: Ensemble of sentence transformers and zero-shot classification
-- **Model Training**: MLP regressor for personalized scoring
-- **Multiple Scoring Modules**: Title, description, tags, and category analysis
-- **API Endpoints**: `/simpletitledesc`, `/predict`, and `/upload` for scoring and summaries
+    subgraph "Background Service Worker"
+        BG_MSG["Message Router"]
+        BG_API["API Client<br/>Scoring, Audit, Coach, Librarian"]
+        BG_ALARM["Alarm Manager<br/>Session timer"]
+        BG_HL["Highlight Storage<br/>Local + backend sync"]
+    end
 
-#### 2. Docker Container
-Located in `YouTube Productivity Score Docker Container/`
-- **Production-ready**: Optimized for deployment
-- **Simplified ML**: Focused on core scoring functionality
-- **Cloud Run Ready**: Dockerized for easy deployment
+    subgraph "Popup UI"
+        PU_SETUP["Setup Tab<br/>Goal, duration, coach mode"]
+        PU_CURR["Current Tab<br/>Live stats, audit, highlights"]
+        PU_SUMM["Summary Tab<br/>Chart.js score graph"]
+        PU_SET["Settings<br/>Theme, privacy toggle"]
+    end
+
+    subgraph "Shared State (chrome.storage.local)"
+        ST["sessionActive, goal, coachMode<br/>watchedScores, currentScore<br/>selectedTheme, totalWatchTime"]
+    end
+
+    CS_MAIN --> CS_SCORE
+    CS_MAIN -.->|FETCH_SCORE| BG_MSG
+    CS_COACH -.->|COACH_ANALYZE| BG_MSG
+    CS_TRANS -.->|response| PU_CURR
+    CS_HL -.->|SAVE_HIGHLIGHT| BG_MSG
+    CS_WATCH -->|totalWatchTime| ST
+
+    BG_MSG --> BG_API
+    BG_ALARM -->|sessionEnd| ST
+    BG_HL --> ST
+
+    PU_SETUP -.->|START_SESSION| BG_MSG
+    PU_CURR -.->|AUDIT_VIDEO| BG_MSG
+    PU_CURR -.->|LIBRARIAN_INDEX| BG_MSG
+
+    CS_MAIN <--> ST
+    BG_MSG <--> ST
+    PU_SETUP <--> ST
+```
+
+## Features
+
+### Real-Time Video Scoring
+
+Every time you navigate to a new YouTube video during an active session, the content script:
+
+1. Detects the video ID from the URL (polled every 1 second)
+2. Sends a scoring request through the background service worker
+3. Displays the relevance score (0-100%) as a floating badge
+4. Applies a red-to-green color gradient across YouTube's UI containers
+
+```mermaid
+sequenceDiagram
+    participant YT as YouTube Page
+    participant CS as Content Script
+    participant BG as Background SW
+    participant API as Backend API
+
+    loop Every 1 second
+        CS->>CS: Check URL for video ID
+        alt New video detected
+            CS->>CS: Show "Calculating..." badge
+            CS->>BG: FETCH_SCORE { url, goal }
+            BG->>API: POST /score
+            API-->>BG: { score: 78 }
+            BG->>CS: NEW_SCORE { score: 78 }
+            CS->>YT: Apply color overlay (green-ish)
+            CS->>YT: Show "78%" badge
+            CS->>CS: Push to watchedScores[]
+        end
+    end
+```
+
+**Color mapping:**
+- Score <= 30%: Red (`#dc2626`)
+- Score >= 80%: Green (`#16a34a`)
+- Between: Smooth RGB interpolation
+
+### Session Management
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle: Extension loaded
+    Idle --> Active: User clicks "Start Session"
+    Active --> Active: Video scored
+    Active --> Ended_Manual: User clicks "Stop Session"
+    Active --> Ended_Auto: Timer alarm fires
+    Ended_Manual --> Summary: Show score chart
+    Ended_Auto --> Summary: Show score chart
+    Summary --> Idle: User starts new session
+
+    state Active {
+        [*] --> Scoring
+        Scoring --> CoachCheck: Every 2 minutes
+        CoachCheck --> Scoring
+        Scoring --> WatchTracking: Continuous
+    }
+```
+
+**Session state** is stored in `chrome.storage.local` and synchronized across all three execution contexts:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `sessionActive` | boolean | Whether a session is running |
+| `goal` | string | User's learning goal |
+| `sessionEndTime` | number | Unix timestamp for session end |
+| `coachMode` | string | `strict`, `balanced`, `relaxed`, or `custom` |
+| `watchedScores` | number[] | All scores from current session |
+| `currentScore` | number | Score of the currently playing video |
+| `totalWatchTime` | number | Seconds of active watching |
+| `selectedTheme` | string | Current theme identifier |
+| `showSummaryOnOpen` | boolean | Flag to auto-show summary tab |
+
+### AI Coach
+
+The content script runs a coach monitoring loop that checks behavioral patterns every 2 minutes:
+
+1. Collects the last 15 video scores and metadata
+2. Sends session data to `POST /coach/analyze`
+3. Displays intervention notifications as slide-in panels on the YouTube page
+
+**Coach modes** control intervention thresholds:
+
+| Mode | Low Score Threshold | Max Distractions Before Alert |
+|------|--------------------|-----------------------------|
+| Strict | 50% | 1 |
+| Balanced | 40% | 3 |
+| Relaxed | 30% | 5 |
+| Custom | 40% | 3 (+ user instructions) |
+
+### Deep Analyze (Auditor)
+
+The popup's "Deep Analyze" button triggers content verification:
+
+1. Extracts video ID and title from the active tab
+2. Sends to `POST /audit` via background service worker
+3. Displays clickbait score, information density, and watch/skip/skim recommendation
+
+### Video Library (Librarian)
+
+"Save to Library" extracts the transcript directly from YouTube's native transcript panel (DOM scraping, not API) and indexes it for semantic search:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant PU as Popup
+    participant CS as Content Script
+    participant BG as Background SW
+    participant API as Backend
+
+    User->>PU: Click "Save to Library"
+    PU->>CS: SCRAPE_TRANSCRIPT
+    CS->>CS: Click transcript button in YouTube UI
+    CS->>CS: Wait 1.5s for panel to load
+    CS->>CS: Extract all segment text + timestamps
+    CS-->>PU: { transcript, segmentCount, charCount }
+    PU->>BG: LIBRARIAN_INDEX { videoId, title, transcript, goal, score }
+    BG->>API: POST /librarian/index
+    API-->>BG: { success: true }
+    BG-->>PU: Indexed successfully
+```
+
+### Highlights
+
+Users can save timestamped highlights with notes during video playback:
+
+- **Via popup:** Click "Highlight Section" button
+- **Via keyboard:** Press `H` while watching (not in a text input)
+- Captures: current timestamp, video title, optional user note, and surrounding transcript text
+- Stored locally in `chrome.storage` and synced to backend via Librarian
+
+### Theme System
+
+7 color schemes applied via CSS custom properties (`--bg`, `--panel`, `--text`, `--accent`, `--border`, `--highlight`):
+
+| Theme | Background | Text |
+|-------|-----------|------|
+| Crimson Vanilla | `#c1121f` | `#fdf0d5` |
+| Vanilla Crimson | `#fdf0d5` | `#c1121f` |
+| Darkreader | `#181e22` | `#ddd` |
+| Cocoa Lemon | `#774123` | `#f3e924` |
+| Golden Ocean | `#1d352f` | `#efc142` |
+| Dusty Apricot | `#418994` | `#fadfca` |
+| Spiced Forest | `#263226` | `#f68238` |
+
+Themes propagate to the YouTube page's score badge via `chrome.storage` listener in the content script.
+
+## Message Protocol
+
+All communication between contexts uses `chrome.runtime.sendMessage` and `chrome.tabs.sendMessage`.
+
+```mermaid
+graph LR
+    subgraph "Popup → Background"
+        A1["START_SESSION"]
+        A2["STOP_SESSION"]
+        A3["FETCH_SCORE"]
+        A4["AUDIT_VIDEO"]
+        A5["LIBRARIAN_INDEX"]
+        A6["LIBRARIAN_SEARCH"]
+        A7["SAVE_HIGHLIGHT"]
+        A8["COACH_ANALYZE"]
+    end
+
+    subgraph "Background → Content Script"
+        B1["NEW_SCORE"]
+        B2["SESSION_ENDED_AUTO"]
+        B3["THEME_CHANGED"]
+    end
+
+    subgraph "Popup → Content Script"
+        C1["START_SESSION"]
+        C2["SCRAPE_TRANSCRIPT"]
+        C3["CREATE_HIGHLIGHT"]
+    end
+
+    subgraph "Content Script → Popup"
+        D1["NEW_SCORE"]
+        D2["SHOW_SUMMARY"]
+        D3["ERROR"]
+        D4["COACH_MESSAGE"]
+    end
+```
+
+## Project Structure
+
+```
+extension/
+├── manifest.json           # Chrome extension manifest (V3)
+├── popup.html              # Popup UI markup
+├── popup.js                # Popup logic (tabs, stats, search, audit)
+├── content.js              # YouTube page integration
+│                             - Score display and color overlay
+│                             - Transcript scraper (DOM-based)
+│                             - Coach monitoring loop
+│                             - Watch time detection
+│                             - Highlight system
+├── background.js           # Service worker
+│                             - API communication proxy
+│                             - Session alarm management
+│                             - Message routing
+│                             - Highlight local storage
+├── config.js               # API URL, feature flags
+├── styles.css              # Theme system + all UI styles
+├── libs/
+│   └── chart.min.js        # Chart.js for score visualization
+├── dashboard/
+│   └── app.js              # Focus Hub dashboard (highlights + RAG chat)
+├── icons/
+│   ├── icon16.png
+│   ├── icon48.png
+│   └── icon128.png
+├── Settings.svg            # Settings gear icon
+└── changelogs/             # Change history
+```
 
 ## Setup
 
-### Chrome Extension
-1. Clone or download this repo.
-2. Go to `chrome://extensions` and enable Developer Mode.
-3. Click "Load unpacked" and select the `TubeFocus Extension` folder.
-4. Pin the extension for easy access.
+### Prerequisites
 
-### Backend Setup
+- Chrome browser (version 88+ for Manifest V3 support)
+- TubeFocus backend API running (local or Cloud Run)
 
-#### Development Environment
-```bash
-cd "YouTube Productivity Score Development Container"
-pip install -r requirements.txt
-python download_all_models.py  # Download ML models
-python app.py  # Start development server
+### Installation
+
+1. Clone the repository
+2. Open `chrome://extensions` in Chrome
+3. Enable "Developer mode" (top-right toggle)
+4. Click "Load unpacked"
+5. Select the `extension/` directory
+
+### Configuration
+
+Edit `config.js` to point to your backend:
+
+```javascript
+const CONFIG = {
+  API_BASE_URL: 'https://your-cloud-run-url',
+  API_KEY: 'your-api-key',
+  SCORE_UPDATE_INTERVAL: 1000,
+  DEBUG_MODE: false
+};
 ```
 
-#### Production Deployment
-```bash
-cd "YouTube Productivity Score Docker Container"
-docker build -t yt-scorer-backend:latest .
-docker run -d -p 8080:8080 --name yt-scorer-backend yt-scorer-backend:latest
-```
+Alternatively, `background.js` has its own `CONFIG` object that takes precedence for API calls. Ensure both match your deployment.
 
-### Environment Variables
-Set the following environment variables:
-- `YOUTUBE_API_KEY`: Your YouTube Data API v3 key
-- `API_KEY`: Secret key for backend API authentication
-- Google Cloud credentials for Gemini 1.5 Flash (if using summaries)
+### Permissions
 
-## Usage
-1. **Open the extension popup.**
-2. **Set your goal** and session duration in the Setup tab.
-3. **(Optional) Enable "Share Session History"** in Settings (gear icon at bottom right) if you want witty summaries.
-4. **Start your session.**
-5. As you watch YouTube videos, the background color will change based on relevance.
-6. At session end, view your average score and (if enabled) your witty summary.
+The extension requests these Chrome permissions:
 
-## ML Models Used
+| Permission | Purpose |
+|------------|---------|
+| `storage` | Persist session state, scores, and highlights |
+| `tabs` | Read active tab URL for video detection |
+| `alarms` | Session timer countdown |
+| `notifications` | Coach intervention alerts |
+| `scripting` | Dynamic content script injection |
 
-### Sentence Transformers (Ensemble)
-- `all-MiniLM-L6-v2`: Fast, general-purpose embeddings
-- `multi-qa-MiniLM-L6-cos-v1`: Optimized for question-answer similarity
-- `paraphrase-MiniLM-L3-v2`: Specialized for paraphrase detection
-- `all-mpnet-base-v2`: High-quality semantic embeddings
-- `all-distilroberta-v1`: Robust RoBERTa-based embeddings
+**Host permissions:** `youtube.com` (content script injection) and the Cloud Run API URL.
 
-### Zero-Shot Classification
-- `facebook/bart-large-mnli`: For zero-shot topic classification
+## Tech Stack
 
-### Cross-Encoder
-- `cross-encoder/ms-marco-MiniLM-L6-v2`: For re-ranking and fine-grained scoring
-
-## API Endpoints
-
-### `/simpletitledesc` (POST) - Simple Scoring
-Score a YouTube video using the simplified scoring system with 5 sentence transformers.
-```json
-{
-  "video_url": "https://www.youtube.com/watch?v=...",
-  "goal": "learn about music videos",
-  "mode": "title_only" | "title_and_description" | "title_and_clean_desc"
-}
-```
-
-### `/predict` (POST) - Advanced Scoring
-Score a YouTube video for relevance to a user goal using multi-factor analysis.
-```json
-{
-  "video_id": "...",
-  "goal": "learn about music videos",
-  "parameters": ["title", "description", "tags", "category"]
-}
-```
-
-### `/upload` (POST)
-Generate a witty, goal-aware summary using Gemini 1.5 Flash.
-```json
-{
-  "goal": "learn about music videos",
-  "session": [
-    {"title": "Never Gonna Give You Up"},
-    {"title": "How Music Videos Are Made"}
-  ]
-}
-```
-
-## Privacy
-- By default, session history is **not** uploaded or stored.
-- You control sharing via the settings toggle.
-- All session data is deleted after upload.
-- ML models run locally for scoring (no data sent to external services).
-
-## Development
-- **Frontend**: `popup.html`, `popup.js`, `content.js`, `background.js`, `styles.css`
-- **Backend**: Flask-based API with ML model ensemble
-- **Manifest v3**: Works on all Chromium browsers
-- **Docker Support**: Production-ready containerization
-
-## License
-MIT
+| Component | Technology |
+|-----------|-----------|
+| Platform | Chrome Extension Manifest V3 |
+| Language | Vanilla JavaScript (ES6+) |
+| Styling | CSS3 with custom properties (theming) |
+| Charts | Chart.js |
+| Storage | chrome.storage.local |
+| Communication | chrome.runtime message passing |

@@ -17,7 +17,8 @@
   ],
   "host_permissions": [
     "https://*.youtube.com/*",
-    "https://simplescore-49646986060.asia-south2.run.app/*"
+    "https://yt-scorer-api-933573987016.us-central1.run.app/*",
+    "http://localhost:8080/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -36,6 +37,7 @@
         "https://*.youtube.com/*"
       ],
       "js": [
+        "local_entertainment_channels.js",
         "content.js"
       ],
       "run_at": "document_idle"

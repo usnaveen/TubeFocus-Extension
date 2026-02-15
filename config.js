@@ -2,7 +2,7 @@
 const CONFIG = {
   // API Configuration - CLOUD RUN
   API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',
-  API_KEY: 'test_key',
+  API_KEY: 'kocwYq-3diqqe-barbur',
 
   // Feature flags
   ENABLE_SESSION_HISTORY: false, // MLP/feedback training removed
@@ -14,8 +14,8 @@ const CONFIG = {
   DEBUG_MODE: true,
 
   // Local development settings
-  LOCAL_DEV: true,
-  LOG_API_CALLS: true
+  LOCAL_DEV: false,
+  LOG_API_CALLS: false
 };
 
 // Export for use in other files
