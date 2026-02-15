@@ -1,402 +1,377 @@
-<!DOCTYPE html>
-<html lang="en">
+<script src="../libs/chart.min.js"></script>
+<style>
+    :root {
+        /* Crimson Vanilla Layout */
+        --bg: #c1121f;
+        --surface: rgba(255, 255, 255, 0.1);
+        --surface-hover: rgba(255, 255, 255, 0.15);
+        --border: rgba(253, 240, 213, 0.3);
+        --primary: #fdf0d5;
+        --accent: #ffffff;
+        --text-main: #fdf0d5;
+        --text-secondary: rgba(253, 240, 213, 0.8);
+        --font-headings: 'Inter', sans-serif;
+        --font-mono: 'Roboto Mono', monospace;
+    }
 
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Focus Hub - TubeFocus</title>
-    <style>
-        /* 
-     * THEME VARIABLES - STRICT COPY FROM REFERENCE
-     * Ensuring exact match with Reference Repo
-     */
-        :root {
-            --bg: #c1121f;
-            --panel: #d41b2a;
-            --text: #fdf0d5;
-            --accent: #fdf0d5;
-            --highlight: #a80f1a;
-            --border: #a80f1a;
-            --summary: #f68238;
-            --font: 'Roboto Mono', monospace;
-        }
+    * {
+        box-sizing: border-box;
+    }
 
-        [data-theme="vanilla-crimson"] {
-            --bg: #fdf0d5;
-            --panel: #fff7ed;
-            --text: #c1121f;
-            --accent: #c1121f;
-            --highlight: #a80f1a;
-            --border: #a80f1a;
-            --summary: #f68238;
-        }
+    body {
+        margin: 0;
+        padding: 20px;
+        background: var(--bg);
+        color: var(--text-main);
+        font-family: var(--font-headings);
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
 
-        /* Base Styles */
-        * {
-            border-radius: 0;
-            /* Reset for Winamp feel if desired, but reference used rounded */
-            box-sizing: border-box;
-        }
+    .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        padding: 0 5px;
+    }
 
-        body {
-            margin: 0;
-            padding: 0;
-            background: var(--bg);
-            color: var(--text);
-            font-family: var(--font);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+    .app-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--primary);
+        letter-spacing: -0.5px;
+    }
 
-        /* Main Container Structure */
-        .main-container {
-            max-width: 1200px;
-            margin: 20px auto;
-            background: var(--panel);
-            border: 4px solid var(--border);
-            /* Thicker border for app-feel */
-            border-radius: 12px;
-            overflow: hidden;
-            min-height: 80vh;
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            width: 95%;
-        }
+    /* 3-Column Grid */
+    .bento-grid {
+        display: grid;
+        grid-template-columns: 320px 380px 1fr;
+        grid-template-rows: 1fr 1fr;
+        /* Two rows for left/middle cols */
+        gap: 15px;
+        height: 100%;
+        overflow: hidden;
+    }
 
-        /* Header */
-        .main-header {
-            background: var(--panel);
-            border-bottom: 2px solid var(--border);
-            padding: 1.5rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+    .bento-box {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        backdrop-filter: blur(10px);
+        transition: transform 0.2s;
+    }
 
-        .logo-text {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--accent);
-            letter-spacing: -1px;
-        }
+    .bento-box:hover {
+        border-color: var(--primary);
+    }
 
-        /* Navigation (Tabs) */
-        .nav-menu {
-            display: flex;
-            gap: 1rem;
-        }
+    .box-title {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--text-secondary);
+        margin-bottom: 12px;
+        font-weight: 700;
+        opacity: 0.9;
+    }
 
-        .nav-btn {
-            background: transparent;
-            border: 2px solid transparent;
-            color: var(--text);
-            padding: 0.5rem 1.5rem;
-            font-family: inherit;
-            font-weight: 700;
-            font-size: 1.1rem;
-            cursor: pointer;
-            border-radius: 6px;
-            transition: all 0.2s ease;
-            text-decoration: none;
-        }
+    /* --- Column 1: Stats & Knowledge --- */
+    .col-left-top {
+        grid-column: 1;
+        grid-row: 1;
+        /* Stats */
+        background: linear-gradient(135deg, var(--surface) 0%, rgba(0, 0, 0, 0.1) 100%);
+    }
 
-        .nav-btn:hover {
-            background: var(--highlight);
-            color: var(--bg);
-            /* Invert on hover if highlight is dark? No, strict copy */
-            opacity: 0.9;
-        }
+    .col-left-bottom {
+        grid-column: 1;
+        grid-row: 2;
+        /* Bookmarks + Highlights tabbed? Or just split */
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        border: none;
+        background: transparent;
+        padding: 0;
+        backdrop-filter: none;
+    }
 
-        .nav-btn.active {
-            background: var(--accent);
-            color: var(--bg);
-        }
+    /* Sub-boxes for left bottom */
+    .sub-box {
+        flex: 1;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
 
-        /* Content Area */
-        .content-area {
-            flex: 1;
-            padding: 2rem;
-            position: relative;
-        }
+    /* --- Column 2: Graph & Transcripts --- */
+    .col-mid-top {
+        grid-column: 2;
+        grid-row: 1;
+        /* Focus Graph */
+    }
 
-        .section-view {
-            display: none;
-            animation: fadeIn 0.3s ease;
-        }
+    .col-mid-bottom {
+        grid-column: 2;
+        grid-row: 2;
+        /* Transcripts */
+    }
 
-        .section-view.active {
-            display: block;
-        }
+    /* --- Column 3: Chat --- */
+    .col-right {
+        grid-column: 3;
+        grid-row: 1 / span 2;
+        padding: 0;
+        /* Chat handles its own padding */
+    }
 
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
+    /* Content Styling */
+    .witty-summary {
+        font-family: var(--font-mono);
+        font-size: 0.85rem;
+        color: var(--accent);
+        line-height: 1.4;
+        margin-bottom: 15px;
+        flex: 1;
+    }
 
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
+    .stats-row {
+        display: flex;
+        justify-content: space-between;
+    }
 
-        /* --- Chat Interface --- */
-        .chat-container {
-            display: flex;
-            flex-direction: column;
-            height: 65vh;
-            max-width: 900px;
-            margin: 0 auto;
-            border: 2px solid var(--border);
-            border-radius: 8px;
-            background: var(--bg);
-            overflow: hidden;
-        }
+    .stat-item {
+        text-align: center;
+    }
 
-        .chat-history {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
+    .stat-val {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--text-main);
+    }
 
-        .message {
-            max-width: 80%;
-            padding: 1rem 1.2rem;
-            border-radius: 8px;
-            line-height: 1.5;
-        }
+    .stat-lbl {
+        font-size: 0.65rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+    }
 
-        .message.user {
-            align-self: flex-end;
-            background: var(--accent);
-            color: var(--bg);
-            border-bottom-right-radius: 0;
-        }
+    .scroll-list {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-right: 4px;
+    }
 
-        .message.bot {
-            align-self: flex-start;
-            background: var(--panel);
-            border: 1px solid var(--border);
-            color: var(--text);
-            border-bottom-left-radius: 0;
-        }
+    .scroll-list::-webkit-scrollbar {
+        width: 3px;
+    }
 
-        /* Markdown Stubs */
-        .message.bot ul,
-        .message.bot ol {
-            margin: 0.5rem 0 0.5rem 1.5rem;
-        }
+    .scroll-list::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+    }
 
-        .message.bot p {
-            margin: 0 0 0.5rem 0;
-        }
+    .video-item,
+    .highlight-item {
+        background: rgba(0, 0, 0, 0.2);
+        padding: 8px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
 
-        .message.bot p:last-child {
-            margin: 0;
-        }
+    .video-item:hover,
+    .highlight-item:hover {
+        background: rgba(0, 0, 0, 0.3);
+    }
 
-        .message.bot strong {
-            color: var(--accent);
-        }
+    .video-title {
+        font-size: 0.8rem;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
 
-        .chat-input-area {
-            padding: 1rem;
-            background: var(--panel);
-            border-top: 2px solid var(--border);
-            display: flex;
-            gap: 0.5rem;
-        }
+    .video-meta {
+        font-size: 0.7rem;
+        color: var(--text-secondary);
+        margin-top: 2px;
+    }
 
-        input.chat-input {
-            flex: 1;
-            padding: 0.8rem;
-            border-radius: 6px;
-            border: 2px solid var(--border);
-            background: var(--bg);
-            color: var(--text);
-            font-family: inherit;
-            font-size: 1rem;
-        }
+    /* Graph */
+    canvas {
+        width: 100% !important;
+        height: 100% !important;
+    }
 
-        input.chat-input:focus {
-            outline: none;
-            border-color: var(--accent);
-            box-shadow: 0 0 0 2px rgba(253, 240, 213, 0.2);
-        }
+    /* Chat */
+    .chat-header {
+        padding: 15px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 700;
+        background: rgba(0, 0, 0, 0.1);
+    }
 
-        button.send-btn {
-            padding: 0 1.5rem;
-            background: var(--accent);
-            color: var(--bg);
-            border: none;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-            font-family: inherit;
-            transition: transform 0.1s;
-        }
+    .chat-history {
+        flex: 1;
+        overflow-y: auto;
+        padding: 15px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
 
-        button.send-btn:active {
-            transform: scale(0.95);
-        }
+    .message {
+        max-width: 85%;
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-size: 0.9rem;
+        line-height: 1.4;
+    }
 
-        button.send-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+    .message.bot {
+        align-self: flex-start;
+        background: #fdf0d5;
+        /* Cream */
+        color: #8a1c24;
+        /* Dark Red text */
+        border-bottom-left-radius: 2px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
 
-        /* --- Highlights Grid --- */
-        .highlights-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 1.5rem;
-        }
+    .message.user {
+        align-self: flex-end;
+        background: #8a1c24;
+        /* Darker Red */
+        color: #fdf0d5;
+        /* Cream Text */
+        border-bottom-right-radius: 2px;
+        border: 1px solid var(--border);
+    }
 
-        .highlight-card {
-            background: var(--bg);
-            border: 2px solid var(--border);
-            border-radius: 8px;
-            padding: 1.5rem;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
+    .chat-input-wrapper {
+        padding: 15px;
+        background: rgba(0, 0, 0, 0.1);
+        border-top: 1px solid var(--border);
+        display: flex;
+        gap: 8px;
+    }
 
-        .highlight-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-            border-color: var(--accent);
-        }
+    .chat-input {
+        flex: 1;
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid var(--border);
+        color: var(--text-main);
+        padding: 10px;
+        border-radius: 6px;
+        outline: none;
+    }
 
-        .highlight-text {
-            font-size: 1rem;
-            line-height: 1.6;
-            margin-bottom: 1rem;
-            display: block;
-            color: var(--text);
-            font-style: italic;
-            border-left: 3px solid var(--accent);
-            padding-left: 1rem;
-        }
+    .send-btn {
+        background: var(--primary);
+        color: var(--bg);
+        border: none;
+        padding: 0 16px;
+        border-radius: 6px;
+        font-weight: 700;
+        cursor: pointer;
+    }
 
-        .highlight-note {
-            font-size: 0.9rem;
-            padding: 0.5rem;
-            background: var(--panel);
-            border-radius: 4px;
-            margin-bottom: 0.5rem;
-        }
-
-        .highlight-meta {
-            font-size: 0.8rem;
-            opacity: 0.8;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .highlight-link {
-            color: var(--accent);
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        .highlight-link:hover {
-            text-decoration: underline;
-        }
-
-        /* Theme Toggle */
-        .theme-toggle-container {
-            margin-left: 1rem;
-        }
-
-        select.theme-select {
-            background: var(--bg);
-            color: var(--text);
-            border: 1px solid var(--highlight);
-            padding: 0.5rem;
-            border-radius: 4px;
-            font-family: inherit;
-            cursor: pointer;
-        }
-
-        /* Loading State */
-        .loading-spinner {
-            margin: 2rem auto;
-            text-align: center;
-            font-size: 1.2rem;
-            color: var(--accent);
-        }
-
-        /* Empty State */
-        .empty-state {
-            text-align: center;
-            padding: 4rem;
-            opacity: 0.7;
-        }
-
-        .empty-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-    </style>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    .empty,
+    .loading {
+        text-align: center;
+        color: var(--text-secondary);
+        padding: 20px;
+        font-size: 0.8rem;
+    }
+</style>
 </head>
 
-<body data-theme="crimson-vanilla">
+<body>
 
-    <div class="main-container">
-        <header class="main-header">
-            <div class="logo-text">FocusHub</div>
+    <header class="dashboard-header">
+        <div class="app-title">TubeFocus</div>
+    </header>
 
-            <nav class="nav-menu">
-                <button class="nav-btn active" onclick="switchTab('highlights')">Highlights</button>
-                <button class="nav-btn" onclick="switchTab('chat')">Librarian Chat</button>
-            </nav>
+    <div class="bento-grid">
 
-            <div class="theme-toggle-container">
-                <select class="theme-select" id="themeSelect">
-                    <option value="crimson-vanilla">Crimson Flame</option>
-                    <option value="vanilla-crimson">Vanilla Cream</option>
-                    <option value="darkreader">Darkreader</option>
-                    <option value="cocoa-lemon">Cocoa Lemon</option>
-                    <option value="golden-ocean">Golden Ocean</option>
-                    <option value="dusty-apricot">Dusty Apricot</option>
-                    <option value="spiced-forest">Spiced Forest</option>
-                </select>
+        <!-- Col 1 Top: Stats -->
+        <div class="bento-box col-left-top">
+            <div class="box-title">Session Pulse</div>
+            <div class="witty-summary" id="witty-summary">
+                Connecting to neural interface...
             </div>
-        </header>
-
-        <div class="content-area">
-            <!-- Highlights Section -->
-            <div id="highlights-view" class="section-view active">
-                <h2 style="color: var(--accent); margin-top: 0;">Your Saved Highlights</h2>
-                <div id="highlights-container" class="highlights-grid">
-                    <!-- Populated by JS -->
-                    <div class="loading-spinner">Loading highlights...</div>
+            <div class="stats-row">
+                <div class="stat-item">
+                    <div class="stat-val" id="avg-score">--</div>
+                    <div class="stat-lbl">Focus Score</div>
                 </div>
-            </div>
-
-            <!-- Chat Section -->
-            <div id="chat-view" class="section-view">
-                <div class="chat-container">
-                    <div class="chat-history" id="chat-history">
-                        <div class="message bot">
-                            Hello! I'm your Librarian. I can answer questions based on the videos you've watched and
-                            indexed. What would you like to know?
-                        </div>
-                    </div>
-                    <div class="chat-input-area">
-                        <input type="text" class="chat-input" id="chat-input"
-                            placeholder="Ask about your video history..." onkeypress="handleEnter(event)">
-                        <button class="send-btn" id="send-btn" onclick="sendMessage()">Send</button>
-                    </div>
+                <div class="stat-item">
+                    <div class="stat-val" id="videos-watched">--</div>
+                    <div class="stat-lbl">Videos</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-val" id="saved-count">--</div>
+                    <div class="stat-lbl">Saved</div>
                 </div>
             </div>
         </div>
+
+        <!-- Col 1 Bottom: Bookmarks & Highlights container -->
+        <div class="col-left-bottom">
+            <div class="sub-box">
+                <div class="box-title">Bookmarked Videos</div>
+                <div class="scroll-list" id="saved-videos-list"></div>
+            </div>
+            <div class="sub-box">
+                <div class="box-title">Recent Highlights</div>
+                <div class="scroll-list" id="highlights-list"></div>
+            </div>
+        </div>
+
+        <!-- Col 2 Top: Focus Graph -->
+        <div class="bento-box col-mid-top">
+            <div class="box-title">Focus Velocity</div>
+            <div style="flex:1; position: relative;">
+                <canvas id="dashboardChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Col 2 Bottom: Saved Summaries -->
+        <div class="bento-box col-mid-bottom">
+            <div class="box-title">Saved Summaries</div>
+            <div class="scroll-list" id="summaries-list"></div>
+        </div>
+
+        <!-- Col 3: Chat -->
+        <div class="bento-box col-right">
+            <div class="chat-header">Librarian Agent</div>
+            <div class="chat-history" id="chat-history">
+                <div class="message bot">
+                    Hello. I can query your entire video history. How can I help you learn today?
+                </div>
+            </div>
+            <div class="chat-input-wrapper">
+                <input type="text" class="chat-input" id="chat-input" placeholder="Ask about a concept...">
+                <button class="send-btn" id="send-btn">Send</button>
+            </div>
+        </div>
+
     </div>
 
     <script src="app.js"></script>

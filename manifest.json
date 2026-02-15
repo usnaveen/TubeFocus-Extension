@@ -37,6 +37,7 @@
         "https://*.youtube.com/*"
       ],
       "js": [
+        "local_entertainment_channels.js",
         "content.js"
       ],
       "run_at": "document_idle"

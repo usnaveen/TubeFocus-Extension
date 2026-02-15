@@ -449,7 +449,7 @@ if (saveVideoButton) {
 
     // Disable button during processing
     saveVideoButton.disabled = true;
-    saveVideoStatus.textContent = '⏳ Extracting transcript...';
+    saveVideoStatus.textContent = '⏳ Preparing save...';
     saveVideoStatus.style.color = '#3b82f6';
 
     try {
@@ -481,58 +481,65 @@ if (saveVideoButton) {
       const videoId = videoIdMatch[1];
       console.log('[Save Video] Video ID:', videoId);
 
-      // Request transcript scraping from content script
+      // Try transcript extraction first; fallback to link + user description.
       chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_TRANSCRIPT' }, async (response) => {
         if (chrome.runtime.lastError) {
           console.error('[Save Video] Error:', chrome.runtime.lastError);
-          saveVideoStatus.textContent = '❌ Error communicating with page';
-          saveVideoStatus.style.color = '#ef4444';
-          setTimeout(() => {
-            saveVideoStatus.textContent = '';
-            saveVideoButton.disabled = false;
-          }, 3000);
-          return;
+          // Continue with link-only save when transcript request fails.
         }
 
-        if (!response || !response.success) {
-          saveVideoStatus.textContent = `❌ ${response?.error || 'Failed to extract transcript'}`;
-          saveVideoStatus.style.color = '#ef4444';
-          setTimeout(() => {
-            saveVideoStatus.textContent = '';
-            saveVideoButton.disabled = false;
-          }, 5000);
-          return;
-        }
+        const transcript = response?.success ? (response.transcript || '') : '';
+        let description = '';
 
-        console.log('[Save Video] Transcript scraped:', response.charCount, 'chars');
-        saveVideoStatus.textContent = `✓ Extracted ${response.segmentCount} segments. Saving...`;
+        if (transcript) {
+          console.log('[Save Video] Transcript scraped:', response.charCount, 'chars');
+          saveVideoStatus.textContent = `✓ Extracted ${response.segmentCount} segments. Saving...`;
+        } else {
+          saveVideoStatus.textContent = 'Transcript unavailable. Waiting for description...';
+          saveVideoStatus.style.color = '#f59e0b';
+          description = (window.prompt('Transcript unavailable. Add a short description to save this video link:') || '').trim();
+          if (!description) {
+            saveVideoStatus.textContent = '❌ Save cancelled. Description is required without transcript.';
+            saveVideoStatus.style.color = '#ef4444';
+            setTimeout(() => {
+              saveVideoStatus.textContent = '';
+              saveVideoButton.disabled = false;
+            }, 3500);
+            return;
+          }
+          saveVideoStatus.textContent = 'Saving link + description...';
+          saveVideoStatus.style.color = '#3b82f6';
+        }
 
         // Get current goal
         chrome.storage.local.get(['goal', 'currentScore'], async (prefs) => {
           const goal = prefs.goal || 'General learning';
           const score = prefs.currentScore || 50;
 
-          // Send to Librarian for indexing
+          // Send unified save request.
           chrome.runtime.sendMessage({
-            type: 'LIBRARIAN_INDEX',
-            videoId: videoId,
+            type: 'LIBRARIAN_SAVE_ITEM',
+            video_id: videoId,
             title: tab.title.replace(' - YouTube', ''),
-            transcript: response.transcript,
+            transcript: transcript,
+            description: description,
+            video_url: tab.url,
             goal: goal,
             score: score
-          }, (indexResponse) => {
+          }, (saveResponse) => {
             if (chrome.runtime.lastError) {
-              console.error('[Save Video] Index error:', chrome.runtime.lastError);
+              console.error('[Save Video] Save error:', chrome.runtime.lastError);
               saveVideoStatus.textContent = '❌ Failed to save to library';
               saveVideoStatus.style.color = '#ef4444';
-            } else if (indexResponse && indexResponse.success) {
-              saveVideoStatus.textContent = '✅ Saved to library!';
+            } else if (saveResponse && saveResponse.success) {
+              const modeLabel = saveResponse.save_mode === 'transcript' ? 'with transcript' : 'as link + description';
+              saveVideoStatus.textContent = `✅ Saved ${modeLabel}!`;
               saveVideoStatus.style.color = '#10b981';
 
               // Refresh librarian stats
               loadLibrarianStats();
             } else {
-              saveVideoStatus.textContent = '❌ Failed to index video';
+              saveVideoStatus.textContent = `❌ ${saveResponse?.error || 'Failed to save video'}`;
               saveVideoStatus.style.color = '#ef4444';
             }
 
@@ -825,8 +832,8 @@ if (historyTab) {
 function loadLibrarianStats() {
   // This is a placeholder - in production, this would call the backend
   // For now, show placeholder text
-  indexedCountEl.textContent = 'N/A (Backend needed)';
-  chunksCountEl.textContent = 'N/A (Backend needed)';
+  if (indexedCountEl) indexedCountEl.textContent = 'N/A (Backend needed)';
+  if (chunksCountEl) chunksCountEl.textContent = 'N/A (Backend needed)';
 }
 
 if (searchButton && historySearchInput) {
@@ -915,4 +922,3 @@ function displaySearchResults(response) {
 
   searchResults.innerHTML = html;
 }
-
