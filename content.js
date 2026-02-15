@@ -589,11 +589,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 let coachCheckInterval = null;
 let sessionVideosWatched = [];
+let coachSessionId = null;
 
 function startCoachMonitoring() {
   if (coachCheckInterval) return; // Already running
 
   console.log('[Coach] Starting proactive monitoring');
+  if (!coachSessionId) {
+    coachSessionId = `coach_${Date.now()}`;
+  }
 
   // Check every 2 minutes for behavioral patterns
   coachCheckInterval = setInterval(() => {
@@ -608,6 +612,7 @@ function stopCoachMonitoring() {
     clearInterval(coachCheckInterval);
     coachCheckInterval = null;
     sessionVideosWatched = [];
+    coachSessionId = null;
     console.log('[Coach] Stopped monitoring');
   }
 }
@@ -636,12 +641,13 @@ async function requestCoachAnalysis() {
   chrome.storage.local.get(['goal'], (prefs) => {
     const goal = prefs.goal || userGoal;
     if (!goal) return;
-
-    const sessionId = `session_${Date.now()}`;
+    if (!coachSessionId) {
+      coachSessionId = `coach_${Date.now()}`;
+    }
 
     chrome.runtime.sendMessage({
       type: 'COACH_ANALYZE',
-      sessionId: sessionId,
+      sessionId: coachSessionId,
       goal: goal,
       sessionData: sessionVideosWatched
     }, (response) => {
@@ -658,6 +664,8 @@ async function requestCoachAnalysis() {
 }
 
 function showCoachNotification(analysis) {
+  if (!analysis) return;
+
   // Remove existing notification if present
   const existing = document.getElementById('tubefocus-coach-notification');
   if (existing) existing.remove();
@@ -689,7 +697,9 @@ function showCoachNotification(analysis) {
     'on_track': '✅'
   };
 
-  const icon = patternIcons[analysis.pattern_detected] || '💡';
+  const pattern = analysis.pattern_detected || analysis.type || 'coach_message';
+  const icon = patternIcons[pattern] || '💡';
+  const message = analysis.message || 'Keep going with your learning goal.';
 
   notification.innerHTML = `
     <style>
@@ -730,11 +740,11 @@ function showCoachNotification(analysis) {
       <span style="font-size: 24px; margin-right: 12px;">${icon}</span>
       <div>
         <div style="font-weight: bold; font-size: 15px;">Coach TubeFocus</div>
-        <div style="font-size: 11px; opacity: 0.9;">${analysis.pattern_detected.replace('_', ' ').toUpperCase()}</div>
+        <div style="font-size: 11px; opacity: 0.9;">${pattern.toString().replace(/_/g, ' ').toUpperCase()}</div>
       </div>
     </div>
     <div class="coach-message" style="margin-bottom: 12px; line-height: 1.4; font-size: 14px;">
-      ${analysis.message}
+      ${message}
     </div>
     <div>
       <button class="coach-action">${getActionButtonText(analysis.suggested_action)}</button>
@@ -1232,53 +1242,147 @@ function injectChaptersButton() {
   console.log('[Navigator] Chapters button injected');
 }
 
-// Hook into the main loop to ensure button persists
-// We'll append this check to tryScore or// Inject Buttons (Chapters + Save) seamlessly
-function injectTubeFocusButtons() {
-  const actionsRow = document.querySelector('#top-level-buttons-computed');
-  if (!actionsRow) return;
-
-  // 1. Inject Chapters Button
-  if (!document.getElementById('tubefocus-chapters-btn')) {
-    const btn = createYouTubeButton('tubefocus-chapters-btn', 'Chapters',
-      `<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"></path>`
-    );
-    btn.addEventListener('click', async () => {
-      const vid = new URLSearchParams(window.location.search).get('v');
-      if (!vid) return;
-      const txt = btn.querySelector('.yt-spec-button-shape-next__button-text-content');
-      const originalText = txt.innerText;
-      txt.innerText = 'Loading...';
-      try {
-        const r = await new Promise(resolve => chrome.runtime.sendMessage({ type: 'GET_CHAPTERS', videoId: vid }, resolve));
-        if (r.success && r.result && r.result.chapters) showChaptersUI(r.result.chapters);
-        else alert('No chapters found.');
-      } catch (e) { console.error(e); } finally { txt.innerText = originalText; }
-    });
-    actionsRow.insertBefore(btn, actionsRow.firstChild);
+function isYouTubeVideoPage() {
+  try {
+    const url = new URL(window.location.href);
+    return url.pathname === '/watch' || url.pathname.startsWith('/shorts/');
+  } catch (_e) {
+    return window.location.href.includes('/watch?v=');
   }
+}
 
-  // 2. Inject unified Save button.
-  if (!document.getElementById('tubefocus-save-btn')) {
-    const saveBtn = createYouTubeButton('tubefocus-save-btn', 'Save to Library',
-      `<path d="M17 3H5a2 2 0 0 0-2 2v14l8-3.2L19 19V5a2 2 0 0 0-2-2zm0 13.05-6-2.4-6 2.4V5h12v11.05z"></path>`
-    );
-    saveBtn.addEventListener('click', handleSaveVideoToLibrary);
-    actionsRow.insertBefore(saveBtn, actionsRow.firstChild);
-  }
+function findYouTubeActionsContainer() {
+  const selectors = [
+    '#top-level-buttons-computed',
+    'ytd-watch-metadata #top-level-buttons-computed',
+    'ytd-watch-metadata #actions-inner',
+    'ytd-watch-metadata #actions',
+    '#actions-inner',
+    '#menu #top-level-buttons-computed',
+    'ytd-segmented-like-dislike-button-renderer'
+  ];
 
-  // 3. Inject Gemini summary save button.
-  if (!document.getElementById('tubefocus-summary-btn')) {
-    const summaryBtn = createYouTubeButton('tubefocus-summary-btn', 'Save Summary',
-      `<path d="M4 4h16v10H7l-3 3V4zm3 3v2h10V7H7zm0 3v2h7v-2H7z"></path>`
-    );
-    summaryBtn.addEventListener('click', handleSaveGeminiSummary);
-    const saveBtn = document.getElementById('tubefocus-save-btn');
-    if (saveBtn) {
-      actionsRow.insertBefore(summaryBtn, saveBtn.nextSibling);
-    } else {
-      actionsRow.insertBefore(summaryBtn, actionsRow.firstChild);
+  for (const selector of selectors) {
+    const el = document.querySelector(selector);
+    if (el && isVisibleElement(el)) {
+      return el;
     }
+  }
+  return null;
+}
+
+function getOrCreateFloatingActionsContainer() {
+  let container = document.getElementById('tubefocus-floating-actions');
+  if (container) return container;
+
+  container = document.createElement('div');
+  container.id = 'tubefocus-floating-actions';
+  container.style.cssText = `
+    position: fixed;
+    right: 18px;
+    top: 88px;
+    z-index: 10050;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 12px;
+    background: rgba(18, 18, 18, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(8px);
+  `;
+
+  document.body.appendChild(container);
+  return container;
+}
+
+function removeFloatingActionsContainer() {
+  const container = document.getElementById('tubefocus-floating-actions');
+  if (container) container.remove();
+}
+
+function getOrCreateTubeFocusButton(id, label, iconPath, onClick) {
+  let btn = document.getElementById(id);
+  if (btn) return btn;
+  btn = createYouTubeButton(id, label, iconPath);
+  btn.addEventListener('click', onClick);
+  return btn;
+}
+
+async function handleChaptersButtonClick(event) {
+  const btn = event.currentTarget;
+  const vid = new URLSearchParams(window.location.search).get('v');
+  if (!vid) return;
+
+  const txt = btn.querySelector('.yt-spec-button-shape-next__button-text-content');
+  const originalText = txt ? txt.innerText : 'Chapters';
+  if (txt) txt.innerText = 'Loading...';
+
+  try {
+    const result = await new Promise(resolve => chrome.runtime.sendMessage({ type: 'GET_CHAPTERS', videoId: vid }, resolve));
+    if (result && result.success && result.result && result.result.chapters) {
+      showChaptersUI(result.result.chapters);
+    } else {
+      showToast('No chapters found for this video.', true);
+    }
+  } catch (error) {
+    console.error('[Navigator] Chapters request failed:', error);
+    showToast('Failed to load chapters.', true);
+  } finally {
+    if (txt) txt.innerText = originalText;
+  }
+}
+
+function placeTubeFocusButton(container, button, position = 'append') {
+  if (!container || !button) return;
+  if (position === 'prepend' && container.firstChild !== button) {
+    container.insertBefore(button, container.firstChild);
+  } else if (button.parentElement !== container) {
+    container.appendChild(button);
+  }
+}
+
+// Inject buttons into native action row, fallback to floating dock.
+function injectTubeFocusButtons() {
+  if (!isYouTubeVideoPage()) {
+    removeFloatingActionsContainer();
+    return;
+  }
+
+  const nativeActions = findYouTubeActionsContainer();
+  const container = nativeActions || getOrCreateFloatingActionsContainer();
+
+  if (nativeActions) {
+    removeFloatingActionsContainer();
+  }
+
+  const chaptersBtn = getOrCreateTubeFocusButton(
+    'tubefocus-chapters-btn',
+    'Chapters',
+    `<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"></path>`,
+    handleChaptersButtonClick
+  );
+  const saveBtn = getOrCreateTubeFocusButton(
+    'tubefocus-save-btn',
+    'Save to Library',
+    `<path d="M17 3H5a2 2 0 0 0-2 2v14l8-3.2L19 19V5a2 2 0 0 0-2-2zm0 13.05-6-2.4-6 2.4V5h12v11.05z"></path>`,
+    handleSaveVideoToLibrary
+  );
+  const summaryBtn = getOrCreateTubeFocusButton(
+    'tubefocus-summary-btn',
+    'Save Summary',
+    `<path d="M4 4h16v10H7l-3 3V4zm3 3v2h10V7H7zm0 3v2h7v-2H7z"></path>`,
+    handleSaveGeminiSummary
+  );
+
+  if (nativeActions) {
+    placeTubeFocusButton(container, summaryBtn, 'prepend');
+    placeTubeFocusButton(container, saveBtn, 'prepend');
+    placeTubeFocusButton(container, chaptersBtn, 'prepend');
+  } else {
+    placeTubeFocusButton(container, chaptersBtn, 'append');
+    placeTubeFocusButton(container, saveBtn, 'append');
+    placeTubeFocusButton(container, summaryBtn, 'append');
   }
 }
 
@@ -1638,9 +1742,23 @@ async function handleSaveGeminiSummary() {
 function createYouTubeButton(id, label, iconPath) {
   const btn = document.createElement('button');
   btn.id = id;
-  btn.className = 'yt-spec-button-shape-next yt-spec-button-shape-next--tonal yt-spec-button-shape-next--mono yt-spec-button-shape-next--size-m';
+  btn.className = 'yt-spec-button-shape-next yt-spec-button-shape-next--size-m';
   btn.setAttribute('aria-label', label);
-  btn.style.cssText = `margin-right: 8px; display: inline-flex; align-items: center; cursor: pointer; border: none; outline: none;`;
+  btn.style.cssText = `
+    margin-right: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    border: 1px solid var(--yt-spec-10-percent-layer, rgba(255,255,255,0.2));
+    border-radius: 18px;
+    padding: 0 12px;
+    height: 36px;
+    background: var(--yt-spec-badge-chip-background, rgba(255,255,255,0.08));
+    color: var(--yt-spec-text-primary, #fff);
+    outline: none;
+  `;
   btn.innerHTML = `
     <div class="yt-spec-button-shape-next__icon" style="margin-right: 6px; display: flex; align-items: center;">
       <svg height="24" viewBox="0 0 24 24" width="24" focusable="false" style="pointer-events: none; display: block; width: 100%; height: 100%; fill: currentColor;">
@@ -1654,6 +1772,7 @@ function createYouTubeButton(id, label, iconPath) {
 
 // Hook into loop
 setInterval(injectTubeFocusButtons, 2000);
+document.addEventListener('yt-navigate-finish', () => setTimeout(injectTubeFocusButtons, 500));
 
 function showChaptersUI(chapters) {
   // Simple overlay for chapters
@@ -1907,6 +2026,12 @@ function renderChapters(chapters, source) {
 const recommendationDecisionCache = new Map();
 let gatekeeperObserver = null;
 let scanTimeout = null;
+const RECOMMENDATION_SELECTORS = [
+  'ytd-compact-video-renderer',
+  'ytd-video-renderer',
+  'ytd-rich-item-renderer',
+  'ytd-grid-video-renderer'
+].join(', ');
 let cachedGoalProfile = {
   goal: '',
   tokens: [],
@@ -2106,12 +2231,12 @@ function getGoalProfile(goal) {
 
 function extractSidebarRecommendation(element) {
   const anchor = element.querySelector('a#thumbnail') || element.querySelector('a#video-title');
-  const titleSpan = element.querySelector('#video-title');
+  const titleSpan = element.querySelector('#video-title, #video-title-link, h3 a#video-title');
 
   if (!anchor || !titleSpan) return null;
   const href = anchor.getAttribute('href') || '';
-  const idMatch = href.match(/[?&]v=([^&]+)/);
-  if (!idMatch) return null;
+  const idMatch = href.match(/[?&]v=([^&]+)/) || href.match(/\/shorts\/([^/?&]+)/);
+  if (!idMatch || !idMatch[1]) return null;
 
   const channelNode =
     element.querySelector('#channel-name a') ||
@@ -2125,6 +2250,50 @@ function extractSidebarRecommendation(element) {
     channel: channelNode ? (channelNode.textContent || '').trim() : '',
     element
   };
+}
+
+function updateFilterStatusBadge() {
+  const existing = document.getElementById('tubefocus-filter-status');
+  if (!sessionActive) {
+    if (existing) existing.remove();
+    return;
+  }
+
+  const host =
+    document.querySelector('#secondary-inner') ||
+    document.querySelector('#secondary') ||
+    document.querySelector('ytd-watch-flexy #secondary');
+  const useFloatingHost = !host;
+  const targetHost = host || document.body;
+
+  const hiddenCount = document.querySelectorAll('.tubefocus-filter-hidden').length;
+  let badge = existing;
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'tubefocus-filter-status';
+    badge.style.cssText = `
+      margin: 8px 0 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(42, 168, 82, 0.18);
+      color: var(--yt-spec-text-primary, #fff);
+      border: 1px solid rgba(42, 168, 82, 0.45);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    `;
+    if (useFloatingHost) {
+      badge.style.position = 'fixed';
+      badge.style.top = '70px';
+      badge.style.left = '14px';
+      badge.style.zIndex = '10040';
+      targetHost.appendChild(badge);
+    } else {
+      targetHost.insertBefore(badge, targetHost.firstChild);
+    }
+  }
+
+  badge.textContent = `TubeFocus filter: ${hiddenCount} hidden`;
 }
 
 function isBlockedEntertainmentChannel(channelName) {
@@ -2233,6 +2402,7 @@ function applyRecommendationFilter(element, decision) {
   } else {
     element.removeAttribute('data-tubefocus-score');
   }
+  updateFilterStatusBadge();
 }
 
 function processSidebarItem(element) {
@@ -2253,7 +2423,8 @@ function processSidebarItem(element) {
 
 function queueVisibleRecommendations() {
   if (!sessionActive) return;
-  document.querySelectorAll('ytd-compact-video-renderer').forEach(processSidebarItem);
+  document.querySelectorAll(RECOMMENDATION_SELECTORS).forEach(processSidebarItem);
+  updateFilterStatusBadge();
 }
 
 function scheduleBatchProcessing() {
@@ -2270,6 +2441,7 @@ function clearGatekeeperDecorations() {
     el.removeAttribute('data-tubefocus-filtered');
     el.removeAttribute('data-tubefocus-score');
   });
+  updateFilterStatusBadge();
 }
 
 function startGatekeeperObserver() {
