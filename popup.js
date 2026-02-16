@@ -19,6 +19,7 @@ const coachTextEl = document.getElementById('coachText');
 const coachModeSelect = document.getElementById('coachMode');
 const customInstructionsContainer = document.getElementById('customInstructionsContainer');
 const coachInstructionsInput = document.getElementById('coachInstructions');
+const coachEnabledToggle = document.getElementById('coachEnabled');
 
 // Save video and highlight buttons
 const saveVideoButton = document.getElementById('saveVideoButton');
@@ -30,10 +31,6 @@ const toggleOffBtn = document.getElementById('toggleOff');
 const tabs = document.querySelectorAll('.tabs button');
 const sections = document.querySelectorAll('section');
 
-
-
-const shareHistoryToggle = document.getElementById('shareHistoryToggle');
-const themeSelector = document.getElementById('themeSelector');
 
 // --- Positive / negative feedback arrays ---
 const positiveMsgs = [
@@ -194,7 +191,7 @@ let timerInterval = null;
 
 // --- Centralized UI Update ---
 function updateUI(state) {
-  const { sessionActive, goal, sessionEndTime, coachMode } = state;
+  const { sessionActive, goal, sessionEndTime, coachMode, coachEnabled } = state;
 
   startBtn.disabled = sessionActive;
   stopBtn.disabled = !sessionActive;
@@ -203,6 +200,9 @@ function updateUI(state) {
   // Update coach mode if provided
   if (coachMode && coachModeSelect) {
     coachModeSelect.value = coachMode;
+  }
+  if (coachEnabledToggle) {
+    coachEnabledToggle.checked = coachEnabled !== false;
   }
 
   toggleOnBtn.classList.toggle('active', sessionActive);
@@ -298,99 +298,6 @@ function updateSessionStats(prefs) {
   }
 }
 
-// --- Auditor Agent Handler ---
-const auditButton = document.getElementById('auditButton');
-const auditResult = document.getElementById('auditResult');
-const clickbaitScoreEl = document.getElementById('clickbaitScore');
-const densityScoreEl = document.getElementById('densityScore');
-const auditRecommendationEl = document.getElementById('auditRecommendation');
-
-if (auditButton) {
-  auditButton.addEventListener('click', async () => {
-    console.log('[Auditor] Button clicked');
-
-    // UI Feedback
-    auditButton.disabled = true;
-    auditButton.querySelector('span').textContent = '⏳ Analyzing...';
-    auditResult.style.display = 'none';
-
-    try {
-      // Get current tab
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      if (!tab.url || !tab.url.includes('youtube.com/watch')) {
-        saveVideoStatus.textContent = '❌ Not on a YouTube video page';
-        saveVideoStatus.style.color = '#ef4444';
-        setTimeout(() => {
-          saveVideoStatus.textContent = '';
-          auditButton.disabled = false;
-          auditButton.querySelector('span').textContent = '🧐 Deep Analyze';
-        }, 3000);
-        return;
-      }
-
-      // Extract video ID
-      const videoIdMatch = tab.url.match(/[?&]v=([^&]+)/);
-      if (!videoIdMatch) {
-        throw new Error("Could not extract video ID");
-      }
-      const videoId = videoIdMatch[1];
-
-      // Get goal from storage
-      chrome.storage.local.get(['goal'], async (prefs) => {
-        const goal = prefs.goal || 'General learning';
-
-        chrome.runtime.sendMessage({
-          type: 'AUDIT_VIDEO',
-          videoId: videoId,
-          title: tab.title.replace(' - YouTube', ''),
-          goal: goal
-        }, (response) => {
-          // Re-enable button
-          auditButton.disabled = false;
-          auditButton.querySelector('span').textContent = '🧐 Deep Analyze';
-
-          if (chrome.runtime.lastError) {
-            console.error('[Auditor] Error:', chrome.runtime.lastError);
-            saveVideoStatus.textContent = '❌ Analysis failed';
-            saveVideoStatus.style.color = '#ef4444';
-            return;
-          }
-
-          if (response && response.success && response.analysis) {
-            const analysis = response.analysis;
-
-            // Show results
-            auditResult.style.display = 'block';
-
-            // Update UI
-            clickbaitScoreEl.textContent = `${analysis.clickbait_score}/100`;
-            clickbaitScoreEl.style.color = analysis.clickbait_score > 70 ? '#ef4444' : '#10b981';
-
-            densityScoreEl.textContent = `${analysis.density_score}/100`;
-
-            let recIcon = '🤔';
-            if (analysis.recommendation === 'watch') recIcon = '✅';
-            if (analysis.recommendation === 'skip') recIcon = '🚫';
-            if (analysis.recommendation === 'skim') recIcon = '⏩';
-
-            auditRecommendationEl.textContent = `${recIcon} ${analysis.recommendation.toUpperCase()}`;
-          } else {
-            saveVideoStatus.textContent = '❌ Analysis failed';
-            saveVideoStatus.style.color = '#ef4444';
-          }
-        });
-      });
-
-    } catch (error) {
-      console.error('[Auditor] Error:', error);
-      auditButton.disabled = false;
-      auditButton.querySelector('span').textContent = '🧐 Deep Analyze';
-      saveVideoStatus.textContent = '❌ Error';
-    }
-  });
-}
-
 // --- Coach Mode Handler ---
 if (coachModeSelect) {
   coachModeSelect.addEventListener('change', () => {
@@ -402,6 +309,12 @@ if (coachModeSelect) {
     }
     // Save preference
     chrome.storage.local.set({ coachMode: mode });
+  });
+}
+
+if (coachEnabledToggle) {
+  coachEnabledToggle.addEventListener('change', () => {
+    chrome.storage.local.set({ coachEnabled: coachEnabledToggle.checked });
   });
 }
 
@@ -565,7 +478,7 @@ if (saveVideoButton) {
 }
 
 // --- Initialize UI & Listen for Changes ---
-chrome.storage.local.get(['sessionActive', 'goal', 'coachMode', 'coachInstructions', 'sessionEndTime', 'selectedTheme', 'watchedScores', 'showSummaryOnOpen', 'totalWatchTime'], (prefs) => {
+chrome.storage.local.get(['sessionActive', 'goal', 'coachMode', 'coachInstructions', 'coachEnabled', 'sessionEndTime', 'selectedTheme', 'watchedScores', 'showSummaryOnOpen', 'totalWatchTime'], (prefs) => {
   updateUI(prefs);
 
   // Initialize coach mode
@@ -585,10 +498,9 @@ chrome.storage.local.get(['sessionActive', 'goal', 'coachMode', 'coachInstructio
     watchTimeEl.textContent = `${mins}m`;
   }
 
-  // Initialize theme
+  // Keep theme application from stored preference, but UI selector was removed.
   const theme = prefs.selectedTheme || 'crimson-vanilla';
   document.documentElement.setAttribute('data-theme', theme);
-  themeSelector.value = theme;
 
   // If session just ended and there are scores to show, switch to summary tab
   if (!prefs.sessionActive && prefs.watchedScores && prefs.watchedScores.length > 0 && prefs.showSummaryOnOpen) {
@@ -604,7 +516,7 @@ chrome.storage.local.get(['sessionActive', 'goal', 'coachMode', 'coachInstructio
 
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local') {
-    chrome.storage.local.get(['sessionActive', 'goal', 'coachMode', 'sessionEndTime', 'totalWatchTime'], updateUI);
+    chrome.storage.local.get(['sessionActive', 'goal', 'coachMode', 'coachEnabled', 'sessionEndTime', 'totalWatchTime'], updateUI);
   }
 });
 
@@ -620,42 +532,8 @@ toggleOffBtn.addEventListener('click', () => {
   });
 });
 
-// Settings modal logic
-const settingsIcon = document.getElementById('settingsIcon');
-const settingsPage = document.getElementById('settings');
-const backToMainBtn = document.getElementById('backToMain');
-
-let lastActiveTab = 'setup';
-
-settingsIcon.addEventListener('click', () => {
-  // Remember the last active tab
-  const activeSection = document.querySelector('section.active');
-  if (activeSection && activeSection.id !== 'settings') {
-    lastActiveTab = activeSection.id;
-  }
-  // Deactivate all sections and activate settings
-  document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
-  settingsPage.classList.add('active');
-});
-
-backToMainBtn.addEventListener('click', () => {
-  // Deactivate settings and activate the last active tab (default to setup)
-  settingsPage.classList.remove('active');
-  const toActivate = document.getElementById(lastActiveTab) || document.getElementById('setup');
-  toActivate.classList.add('active');
-});
-
-
-// Theme switching functionality
-themeSelector.addEventListener('change', () => {
-  const selectedTheme = themeSelector.value;
-  document.documentElement.setAttribute('data-theme', selectedTheme);
-  chrome.storage.local.set({ selectedTheme: selectedTheme });
-  chrome.runtime.sendMessage({ type: 'THEME_CHANGED', theme: selectedTheme });
-});
-
 // --- Coach Mode Initialization ---
-chrome.storage.local.get(['coachMode', 'coachInstructions'], (data) => {
+chrome.storage.local.get(['coachMode', 'coachInstructions', 'coachEnabled'], (data) => {
   if (coachModeSelect && data.coachMode) {
     coachModeSelect.value = data.coachMode;
     if (data.coachMode === 'custom') {
@@ -664,6 +542,9 @@ chrome.storage.local.get(['coachMode', 'coachInstructions'], (data) => {
   }
   if (coachInstructionsInput && data.coachInstructions) {
     coachInstructionsInput.value = data.coachInstructions;
+  }
+  if (coachEnabledToggle) {
+    coachEnabledToggle.checked = data.coachEnabled !== false;
   }
 });
 
@@ -711,17 +592,19 @@ startBtn.addEventListener('click', () => {
   // Get coach mode and instructions
   const coachMode = coachModeSelect ? coachModeSelect.value : 'balanced';
   const coachInstructions = coachInstructionsInput ? coachInstructionsInput.value : '';
+  const coachEnabled = coachEnabledToggle ? coachEnabledToggle.checked : true;
 
   chrome.runtime.sendMessage({
     type: 'START_SESSION',
     duration,
     goal,
     coachMode,
-    coachInstructions
+    coachInstructions,
+    coachEnabled
   });
 
   // Send message to content.js to start session
-  sendToContent({ type: 'START_SESSION', goal, coachMode, coachInstructions });
+  sendToContent({ type: 'START_SESSION', goal, coachMode, coachInstructions, coachEnabled });
 });
 
 // --- Stop Session ---

@@ -229,6 +229,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'START_SESSION':
       sessionActive = true;
       userGoal = message.goal;
+      if (typeof message.coachEnabled === 'boolean') {
+        coachEnabled = message.coachEnabled;
+      }
       recommendationDecisionCache.clear();
       queueVisibleRecommendations();
       hideScoreDisplay(); // Hide display when session starts
@@ -273,12 +276,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // hydrate state on load
 chrome.storage.local.get(
-  ['sessionActive', 'goal', 'lastVideoId', 'currentScore', 'selectedTheme'],
+  ['sessionActive', 'goal', 'lastVideoId', 'currentScore', 'selectedTheme', 'coachEnabled'],
   prefs => {
     sessionActive = !!prefs.sessionActive;
     userGoal = prefs.goal || '';
     lastVideoId = prefs.lastVideoId || null;
     currentScore = prefs.currentScore || null;
+    coachEnabled = prefs.coachEnabled !== false;
     // Theme initialization
     const theme = prefs.selectedTheme || 'crimson-vanilla';
     document.documentElement.setAttribute('data-theme', theme);
@@ -590,8 +594,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 let coachCheckInterval = null;
 let sessionVideosWatched = [];
 let coachSessionId = null;
+let coachEnabled = true;
 
 function startCoachMonitoring() {
+  if (!coachEnabled) return;
   if (coachCheckInterval) return; // Already running
 
   console.log('[Coach] Starting proactive monitoring');
@@ -634,7 +640,7 @@ function trackVideoForCoach(videoId, title, score) {
 }
 
 async function requestCoachAnalysis() {
-  if (!sessionActive || sessionVideosWatched.length === 0) return;
+  if (!coachEnabled || !sessionActive || sessionVideosWatched.length === 0) return;
 
   console.log('[Coach] Requesting analysis with', sessionVideosWatched.length, 'videos');
 
@@ -664,7 +670,7 @@ async function requestCoachAnalysis() {
 }
 
 function showCoachNotification(analysis) {
-  if (!analysis) return;
+  if (!analysis || !coachEnabled) return;
 
   // Remove existing notification if present
   const existing = document.getElementById('tubefocus-coach-notification');
@@ -774,6 +780,11 @@ function showCoachNotification(analysis) {
   }, 15000);
 }
 
+function removeCoachNotification() {
+  const existing = document.getElementById('tubefocus-coach-notification');
+  if (existing) existing.remove();
+}
+
 function getActionButtonText(action) {
   const actionTexts = {
     'take_break': 'Take a Break',
@@ -810,95 +821,339 @@ function handleCoachAction(action) {
 
 // Listen for session start/stop to manage coach monitoring
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.sessionActive) {
-    if (changes.sessionActive.newValue) {
+  if (area !== 'local') return;
+
+  if (changes.coachEnabled) {
+    coachEnabled = changes.coachEnabled.newValue !== false;
+    if (!coachEnabled) {
+      stopCoachMonitoring();
+      removeCoachNotification();
+    } else if (sessionActive) {
+      startCoachMonitoring();
+    }
+  }
+
+  if (changes.sessionActive) {
+    sessionActive = !!changes.sessionActive.newValue;
+    if (sessionActive && coachEnabled) {
       startCoachMonitoring();
     } else {
       stopCoachMonitoring();
+      removeCoachNotification();
     }
   }
 });
 
 // Initialize coach monitoring if session is active
-chrome.storage.local.get(['sessionActive'], (prefs) => {
-  if (prefs.sessionActive) {
+chrome.storage.local.get(['sessionActive', 'coachEnabled'], (prefs) => {
+  coachEnabled = prefs.coachEnabled !== false;
+  if (prefs.sessionActive && coachEnabled) {
     startCoachMonitoring();
   }
 });
 
 // ===== VIDEO HIGHLIGHT FEATURE =====
 
-/**
- * Creates a highlight at the current video timestamp
- */
-async function createVideoHighlight() {
-  console.log('[Highlight] Creating highlight...');
+let highlightSelectionState = null;
 
-  try {
-    const video = document.querySelector('video');
-    if (!video) {
-      return { success: false, error: 'No video found on page' };
+function ensureHighlightSelectionStyles() {
+  if (document.getElementById('tubefocus-highlight-selection-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'tubefocus-highlight-selection-styles';
+  style.textContent = `
+    .tubefocus-highlight-mode {
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.95), 0 0 16px rgba(59, 130, 246, 0.75) !important;
+      border-radius: 999px !important;
     }
+    .tubefocus-highlight-range-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 8;
+    }
+    .tubefocus-highlight-range-fill {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      background: linear-gradient(90deg, rgba(30, 144, 255, 0.45), rgba(56, 189, 248, 0.55));
+      box-shadow: 0 0 12px rgba(59, 130, 246, 0.8);
+      border-radius: 999px;
+    }
+    .tubefocus-highlight-marker {
+      position: absolute;
+      top: -3px;
+      width: 4px;
+      height: calc(100% + 6px);
+      background: #60a5fa;
+      box-shadow: 0 0 12px rgba(96, 165, 250, 0.9);
+      border-radius: 2px;
+    }
+  `;
+  document.head.appendChild(style);
+}
 
-    const currentTime = Math.floor(video.currentTime);
-    const videoId = new URL(window.location.href).searchParams.get('v');
-    const videoTitle = document.querySelector('h1.ytd-video-primary-info-renderer yt-formatted-string, #title h1 yt-formatted-string')?.textContent || document.title;
+function getVideoProgressBarElement() {
+  return (
+    document.querySelector('.ytp-progress-bar') ||
+    document.querySelector('.ytp-progress-list') ||
+    document.querySelector('.ytp-scrubber-container')
+  );
+}
 
-    // Format timestamp
-    const minutes = Math.floor(currentTime / 60);
-    const seconds = currentTime % 60;
-    const timestampFormatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+function parseTimestampToSeconds(label) {
+  const parts = String(label || '')
+    .split(':')
+    .map((part) => Number(part.trim()))
+    .filter((value) => Number.isFinite(value));
 
-    // Create highlight modal
-    const highlight = await showHighlightComposer({
-      videoId,
-      videoTitle,
-      timestamp: currentTime,
-      timestampFormatted
+  if (!parts.length) return null;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0];
+}
+
+function formatSecondsToLabel(totalSeconds) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function cleanupHighlightSelection() {
+  if (!highlightSelectionState) return;
+
+  const state = highlightSelectionState;
+  if (state.cleanupFns) {
+    state.cleanupFns.forEach((cleanup) => {
+      try { cleanup(); } catch (_e) { /* noop */ }
     });
+  }
 
-    if (highlight.cancelled) {
-      return { success: false, error: 'Cancelled by user' };
+  if (state.progressBar) {
+    state.progressBar.classList.remove('tubefocus-highlight-mode');
+    const overlay = state.progressBar.querySelector('.tubefocus-highlight-range-overlay');
+    if (overlay) overlay.remove();
+    if (state.resetPosition) {
+      state.progressBar.style.position = '';
     }
+  }
 
-    // Try to get transcript for this section
-    let transcriptExcerpt = null;
-    try {
-      transcriptExcerpt = await getTranscriptForTimestamp(currentTime, 30); // 30 seconds around timestamp
-    } catch (e) {
-      console.log('[Highlight] No transcript available for this section');
-    }
+  highlightSelectionState = null;
+}
 
-    // Save highlight via background script
+function updateHighlightSelectionOverlay() {
+  const state = highlightSelectionState;
+  if (!state || !state.progressBar || !Number.isFinite(state.videoDuration) || state.videoDuration <= 0) return;
+
+  let overlay = state.progressBar.querySelector('.tubefocus-highlight-range-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'tubefocus-highlight-range-overlay';
+    state.progressBar.appendChild(overlay);
+  }
+
+  overlay.innerHTML = '';
+
+  if (state.startTime == null) return;
+
+  const startPct = Math.max(0, Math.min(100, (state.startTime / state.videoDuration) * 100));
+  const startMarker = document.createElement('div');
+  startMarker.className = 'tubefocus-highlight-marker';
+  startMarker.style.left = `calc(${startPct}% - 2px)`;
+  overlay.appendChild(startMarker);
+
+  if (state.endTime == null) return;
+
+  const endPct = Math.max(0, Math.min(100, (state.endTime / state.videoDuration) * 100));
+  const left = Math.min(startPct, endPct);
+  const width = Math.max(0.6, Math.abs(endPct - startPct));
+
+  const fill = document.createElement('div');
+  fill.className = 'tubefocus-highlight-range-fill';
+  fill.style.left = `${left}%`;
+  fill.style.width = `${width}%`;
+  overlay.appendChild(fill);
+
+  const endMarker = document.createElement('div');
+  endMarker.className = 'tubefocus-highlight-marker';
+  endMarker.style.left = `calc(${endPct}% - 2px)`;
+  overlay.appendChild(endMarker);
+}
+
+function transcriptExcerptForRange(segments, startSeconds, endSeconds) {
+  if (!Array.isArray(segments) || segments.length === 0) return null;
+
+  const clipped = segments
+    .map((segment) => ({
+      at: parseTimestampToSeconds(segment.timestamp),
+      text: (segment.text || '').trim()
+    }))
+    .filter((segment) => Number.isFinite(segment.at) && segment.text);
+
+  if (!clipped.length) return null;
+
+  const excerpt = clipped
+    .filter((segment) => segment.at >= startSeconds && segment.at <= (endSeconds + 1))
+    .map((segment) => segment.text)
+    .slice(0, 24);
+
+  if (!excerpt.length) return null;
+  return excerpt.join(' ');
+}
+
+async function persistHighlightRange(state, note) {
+  const transcriptResult = await scrapeTranscriptFromYouTube();
+  const transcriptExcerpt = transcriptResult?.success
+    ? transcriptExcerptForRange(transcriptResult.segments || [], state.startTime, state.endTime)
+    : null;
+
+  const rangeLabel = `${formatSecondsToLabel(state.startTime)} - ${formatSecondsToLabel(state.endTime)}`;
+
+  return new Promise((resolve) => {
     chrome.runtime.sendMessage({
       type: 'SAVE_HIGHLIGHT',
       highlight: {
-        videoId,
-        videoTitle,
-        timestamp: currentTime,
-        timestampFormatted,
-        note: highlight.note,
+        videoId: state.videoId,
+        videoTitle: state.videoTitle,
+        timestamp: state.startTime,
+        timestampFormatted: formatSecondsToLabel(state.startTime),
+        startTimestamp: state.startTime,
+        endTimestamp: state.endTime,
+        startTimestampFormatted: formatSecondsToLabel(state.startTime),
+        endTimestampFormatted: formatSecondsToLabel(state.endTime),
+        rangeLabel,
+        note: note || '',
         transcript: transcriptExcerpt,
-        videoUrl: `https://www.youtube.com/watch?v=${videoId}&t=${currentTime}`,
+        videoUrl: `https://www.youtube.com/watch?v=${state.videoId}&t=${state.startTime}`,
         createdAt: new Date().toISOString()
       }
-    }, (response) => {
-      if (response && response.success) {
-        showHighlightSavedNotification(timestampFormatted);
+    }, (response) => resolve(response));
+  });
+}
+
+async function createVideoHighlight() {
+  try {
+    if (highlightSelectionState?.active) {
+      cleanupHighlightSelection();
+      showToast('Highlight range selection cancelled.');
+      return { success: false, error: 'selection_cancelled' };
+    }
+
+    const video = document.querySelector('video');
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
+      return { success: false, error: 'No playable video found.' };
+    }
+
+    const videoId = new URL(window.location.href).searchParams.get('v');
+    if (!videoId) {
+      return { success: false, error: 'Video ID not found.' };
+    }
+
+    const progressBar = getVideoProgressBarElement();
+    if (!progressBar) {
+      return { success: false, error: 'Could not detect YouTube progress bar.' };
+    }
+
+    ensureHighlightSelectionStyles();
+
+    const resetPosition = window.getComputedStyle(progressBar).position === 'static';
+    if (resetPosition) {
+      progressBar.style.position = 'relative';
+    }
+
+    highlightSelectionState = {
+      active: true,
+      videoId,
+      videoTitle: document.querySelector('#title h1 yt-formatted-string')?.textContent?.trim() || document.title.replace(' - YouTube', ''),
+      progressBar,
+      videoDuration: video.duration,
+      startTime: null,
+      endTime: null,
+      cleanupFns: [],
+      resetPosition
+    };
+
+    progressBar.classList.add('tubefocus-highlight-mode');
+
+    const handleProgressClick = async (event) => {
+      const state = highlightSelectionState;
+      if (!state || !state.active) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const rect = state.progressBar.getBoundingClientRect();
+      if (!rect.width) return;
+
+      const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+      const clickedTime = Math.floor(ratio * state.videoDuration);
+
+      if (state.startTime == null) {
+        state.startTime = clickedTime;
+        state.endTime = null;
+        updateHighlightSelectionOverlay();
+        showToast(`Start set at ${formatSecondsToLabel(clickedTime)}. Click again to set end.`);
+        return;
       }
-    });
 
-    return { success: true, timestamp: timestampFormatted };
+      state.endTime = clickedTime;
+      if (state.endTime < state.startTime) {
+        const swap = state.startTime;
+        state.startTime = state.endTime;
+        state.endTime = swap;
+      }
 
+      if ((state.endTime - state.startTime) < 2) {
+        state.endTime = null;
+        updateHighlightSelectionOverlay();
+        showToast('Select at least a 2-second range.', true);
+        return;
+      }
+
+      updateHighlightSelectionOverlay();
+      const rangeLabel = `${formatSecondsToLabel(state.startTime)} - ${formatSecondsToLabel(state.endTime)}`;
+      const modalResult = await showHighlightComposer({
+        videoTitle: state.videoTitle,
+        rangeLabel
+      });
+      cleanupHighlightSelection();
+
+      if (modalResult.cancelled) {
+        return;
+      }
+
+      const saveResult = await persistHighlightRange(state, modalResult.note);
+      if (saveResult?.success) {
+        showHighlightSavedNotification(rangeLabel);
+      } else {
+        showToast(saveResult?.error || 'Failed to save highlight range.', true);
+      }
+    };
+
+    const handleEsc = (event) => {
+      if (event.key !== 'Escape') return;
+      cleanupHighlightSelection();
+      showToast('Highlight range selection cancelled.');
+    };
+
+    progressBar.addEventListener('click', handleProgressClick, true);
+    document.addEventListener('keydown', handleEsc, true);
+    highlightSelectionState.cleanupFns.push(() => progressBar.removeEventListener('click', handleProgressClick, true));
+    highlightSelectionState.cleanupFns.push(() => document.removeEventListener('keydown', handleEsc, true));
+
+    showToast('Highlight mode: click the progress bar to set start, then end.');
+    return { success: true, pending: true };
   } catch (error) {
-    console.error('[Highlight] Error:', error);
+    console.error('[Highlight] Range selection error:', error);
+    cleanupHighlightSelection();
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Show highlight modal for user to add a note
- */
 function showHighlightComposer(data) {
   return new Promise((resolve) => {
     // Remove existing modal
@@ -935,17 +1190,17 @@ function showHighlightComposer(data) {
           <span style="font-size: 28px;">✨</span>
           <div>
             <h3 style="margin: 0; color: #fff; font-size: 18px;">Save Highlight</h3>
-            <p style="margin: 4px 0 0; color: #888; font-size: 13px;">at ${data.timestampFormatted}</p>
+            <p style="margin: 4px 0 0; color: #888; font-size: 13px;">${data.rangeLabel}</p>
           </div>
         </div>
         
         <p style="color: #ccc; font-size: 13px; margin-bottom: 12px; line-height: 1.4;">
-          ${data.videoTitle.substring(0, 60)}${data.videoTitle.length > 60 ? '...' : ''}
+          ${(data.videoTitle || '').substring(0, 80)}${(data.videoTitle || '').length > 80 ? '...' : ''}
         </p>
         
         <textarea 
           id="highlight-note" 
-          placeholder="Add a note about this highlight (optional)..."
+          placeholder="Add a note for this highlight range..."
           style="
             width: 100%;
             min-height: 80px;
@@ -971,7 +1226,7 @@ function showHighlightComposer(data) {
             font-weight: bold;
             font-size: 14px;
             cursor: pointer;
-          ">Save Highlight</button>
+          ">Save Range</button>
           <button id="highlight-cancel" style="
             padding: 12px 20px;
             background: rgba(255,255,255,0.1);
@@ -1017,57 +1272,7 @@ function showHighlightComposer(data) {
   });
 }
 
-/**
- * Get transcript text around a specific timestamp
- */
-async function getTranscriptForTimestamp(timestamp, windowSeconds = 30) {
-  // Check if transcript panel is already open
-  let transcriptPanel = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]');
-
-  if (!transcriptPanel) {
-    // Try to open transcript
-    const transcriptButton = document.querySelector('button[aria-label*="transcript" i], button[aria-label*="Show transcript" i]');
-    if (transcriptButton) {
-      transcriptButton.click();
-      await new Promise(r => setTimeout(r, 1500));
-      transcriptPanel = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]');
-    }
-  }
-
-  if (!transcriptPanel) {
-    return null;
-  }
-
-  // Get transcript segments
-  const segments = transcriptPanel.querySelectorAll('ytd-transcript-segment-renderer');
-  if (!segments.length) return null;
-
-  const relevantText = [];
-  const startTime = Math.max(0, timestamp - windowSeconds / 2);
-  const endTime = timestamp + windowSeconds / 2;
-
-  segments.forEach(segment => {
-    const timestampEl = segment.querySelector('.segment-timestamp');
-    const textEl = segment.querySelector('.segment-text');
-
-    if (timestampEl && textEl) {
-      const timeText = timestampEl.textContent.trim();
-      const [mins, secs] = timeText.split(':').map(Number);
-      const segmentTime = mins * 60 + secs;
-
-      if (segmentTime >= startTime && segmentTime <= endTime) {
-        relevantText.push(textEl.textContent.trim());
-      }
-    }
-  });
-
-  return relevantText.length > 0 ? relevantText.join(' ') : null;
-}
-
-/**
- * Show notification when highlight is saved
- */
-function showHighlightSavedNotification(timestamp) {
+function showHighlightSavedNotification(label) {
   const notification = document.createElement('div');
   notification.style.cssText = `
     position: fixed;
@@ -1083,7 +1288,7 @@ function showHighlightSavedNotification(timestamp) {
     animation: slideIn 0.3s ease-out;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   `;
-  notification.innerHTML = `✨ Highlight saved at ${timestamp}`;
+  notification.innerHTML = `✨ Highlight saved: ${label}`;
   document.body.appendChild(notification);
 
   setTimeout(() => {
@@ -1182,7 +1387,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Keyboard shortcut: press "h" to save a highlight in active sessions.
+// Keyboard shortcut: press "h" to start/stop highlight range selection.
 document.addEventListener('keydown', (e) => {
   if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) || document.activeElement.isContentEditable) {
     return;
@@ -1193,54 +1398,10 @@ document.addEventListener('keydown', (e) => {
   }
 
   e.preventDefault();
-  if (sessionActive) {
-    createVideoHighlight();
-    return;
-  }
-
-  chrome.storage.local.get('sessionActive', (d) => {
-    if (d.sessionActive) {
-      createVideoHighlight();
-    } else {
-      showErrorOverlay('Start a session to save highlights!');
-    }
-  });
+  createVideoHighlight();
 });
 
 // ===== NAVIGATOR AGENT: Chapters Feature =====
-
-function injectChaptersButton() {
-  // 1. Check if button already exists
-  if (document.getElementById('tubefocus-chapters-btn')) return;
-
-  // 2. Find injection target (YouTube's action bar near Like/Share)
-  // #top-level-buttons-computed is the standard container for Like, Share, etc.
-  // Also try #actions-inner or #flexible-item-buttons for robustness
-  const actionsBar = document.querySelector('#top-level-buttons-computed') ||
-    document.querySelector('.ytd-menu-renderer');
-
-  if (!actionsBar) return; // Not ready yet
-
-  // 3. Create Button
-  const btn = document.createElement('button');
-  btn.id = 'tubefocus-chapters-btn';
-  btn.className = 'tubefocus-chapters-btn';
-  btn.innerHTML = `
-    <span style="font-size: 18px; margin-right: 6px;">📑</span>
-    <span>Chapters</span>
-  `;
-
-  // 4. Inject
-  // Try to insert as first child to be visible
-  actionsBar.insertBefore(btn, actionsBar.firstChild);
-
-  // 5. Add Click Listener
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation(); // Prevent YT navigation
-    toggleChaptersPanel();
-  });
-  console.log('[Navigator] Chapters button injected');
-}
 
 function isYouTubeVideoPage() {
   try {
@@ -1310,27 +1471,23 @@ function getOrCreateTubeFocusButton(id, label, iconPath, onClick) {
 }
 
 async function handleChaptersButtonClick(event) {
-  const btn = event.currentTarget;
-  const vid = new URLSearchParams(window.location.search).get('v');
-  if (!vid) return;
+  event.stopPropagation();
+  toggleChaptersPanel();
+}
 
-  const txt = btn.querySelector('.yt-spec-button-shape-next__button-text-content');
-  const originalText = txt ? txt.innerText : 'Chapters';
-  if (txt) txt.innerText = 'Loading...';
-
+async function handleAddButtonClick(event) {
+  if (event) event.stopPropagation();
   try {
-    const result = await new Promise(resolve => chrome.runtime.sendMessage({ type: 'GET_CHAPTERS', videoId: vid }, resolve));
-    if (result && result.success && result.result && result.result.chapters) {
-      showChaptersUI(result.result.chapters);
-    } else {
-      showToast('No chapters found for this video.', true);
-    }
+    await openAddVideoModal();
   } catch (error) {
-    console.error('[Navigator] Chapters request failed:', error);
-    showToast('Failed to load chapters.', true);
-  } finally {
-    if (txt) txt.innerText = originalText;
+    console.error('[Add] Failed to open add modal:', error);
+    showToast('Unable to open Add modal.', true);
   }
+}
+
+async function handleHighlightButtonClick(event) {
+  if (event) event.stopPropagation();
+  createVideoHighlight();
 }
 
 function placeTubeFocusButton(container, button, position = 'append') {
@@ -1362,27 +1519,27 @@ function injectTubeFocusButtons() {
     `<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"></path>`,
     handleChaptersButtonClick
   );
-  const saveBtn = getOrCreateTubeFocusButton(
-    'tubefocus-save-btn',
-    'Save to Library',
-    `<path d="M17 3H5a2 2 0 0 0-2 2v14l8-3.2L19 19V5a2 2 0 0 0-2-2zm0 13.05-6-2.4-6 2.4V5h12v11.05z"></path>`,
-    handleSaveVideoToLibrary
+  const addBtn = getOrCreateTubeFocusButton(
+    'tubefocus-add-btn',
+    'Add to Library',
+    `<path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"></path>`,
+    handleAddButtonClick
   );
-  const summaryBtn = getOrCreateTubeFocusButton(
-    'tubefocus-summary-btn',
-    'Save Summary',
-    `<path d="M4 4h16v10H7l-3 3V4zm3 3v2h10V7H7zm0 3v2h7v-2H7z"></path>`,
-    handleSaveGeminiSummary
+  const highlightBtn = getOrCreateTubeFocusButton(
+    'tubefocus-highlight-btn',
+    'Highlight Range',
+    `<path d="M6 2h12l-1 8h-3v10h-4V10H7L6 2zm3 2 .5 4h5l.5-4h-6z"></path>`,
+    handleHighlightButtonClick
   );
 
   if (nativeActions) {
-    placeTubeFocusButton(container, summaryBtn, 'prepend');
-    placeTubeFocusButton(container, saveBtn, 'prepend');
+    placeTubeFocusButton(container, highlightBtn, 'prepend');
     placeTubeFocusButton(container, chaptersBtn, 'prepend');
+    placeTubeFocusButton(container, addBtn, 'prepend');
   } else {
-    placeTubeFocusButton(container, chaptersBtn, 'append');
-    placeTubeFocusButton(container, saveBtn, 'append');
-    placeTubeFocusButton(container, summaryBtn, 'append');
+    placeTubeFocusButton(container, addBtn, 'append');
+    placeTubeFocusButton(container, chaptersBtn, 'prepend');
+    placeTubeFocusButton(container, highlightBtn, 'append');
   }
 }
 
@@ -1400,18 +1557,6 @@ async function getVideoContext() {
     goal: userGoal || goalPrefs.goal || 'General Learning',
     score: goalPrefs.currentScore || 50,
     videoUrl: window.location.href
-  };
-}
-
-function setActionButtonState(buttonId, label) {
-  const btn = document.getElementById(buttonId);
-  if (!btn) return null;
-  const textNode = btn.querySelector('.yt-spec-button-shape-next__button-text-content');
-  if (!textNode) return null;
-  const previous = textNode.innerText;
-  textNode.innerText = label;
-  return () => {
-    textNode.innerText = previous;
   };
 }
 
@@ -1650,122 +1795,215 @@ async function scrapeSummaryFromYouTubeAskPanel() {
   };
 }
 
-async function handleSaveVideoToLibrary() {
-  const restore = setActionButtonState('tubefocus-save-btn', 'Saving...');
-  try {
-    const context = await getVideoContext();
-    if (!context) {
-      showToast('Could not find this video.', true);
-      return;
-    }
+async function openAddVideoModal() {
+  const context = await getVideoContext();
+  if (!context) {
+    showToast('Could not read current video.', true);
+    return;
+  }
 
-    const transcriptResult = await scrapeTranscriptFromYouTube();
-    const transcript = transcriptResult?.success ? transcriptResult.transcript : '';
+  const existing = document.getElementById('tubefocus-add-modal');
+  if (existing) existing.remove();
 
-    let description = '';
-    if (!transcript) {
-      description = window.prompt('Transcript is unavailable. Add a short description to save this video link:') || '';
-      description = description.trim();
-      if (!description) {
-        showToast('Save cancelled. Description is required without transcript.', true);
+  const overlay = document.createElement('div');
+  overlay.id = 'tubefocus-add-modal';
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    z-index: 100120;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.72);
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+  `;
+
+  overlay.innerHTML = `
+    <div style="
+      width: min(520px, 92vw);
+      background: #181818;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 14px;
+      padding: 18px;
+      color: #fff;
+      box-shadow: 0 18px 60px rgba(0,0,0,0.45);
+    ">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="margin:0; font-size:18px;">Add Video To Library</h3>
+        <button id="tubefocus-add-close" style="background:none;border:none;color:#ccc;font-size:20px;cursor:pointer;">×</button>
+      </div>
+
+      <div style="font-size:13px; color:#bbb; margin-bottom:10px; line-height:1.35;">
+        ${context.title}
+      </div>
+
+      <div id="tubefocus-transcript-status" style="
+        font-size:13px;
+        padding:8px 10px;
+        border-radius:8px;
+        background: rgba(255,255,255,0.06);
+        margin-bottom:12px;
+      ">Checking transcript availability...</div>
+
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px;cursor:pointer;">
+        <input id="tubefocus-save-summary-toggle" type="checkbox" checked />
+        Save YouTube Ask summary too
+      </label>
+
+      <label style="font-size:12px; color:#c8c8c8; display:block; margin-bottom:6px;">Description (for your future search)</label>
+      <textarea id="tubefocus-add-description" placeholder="e.g. Must watch for RoPE/KV-cache revision" style="
+        width:100%;
+        min-height:84px;
+        border-radius:10px;
+        border:1px solid rgba(255,255,255,0.2);
+        background: rgba(255,255,255,0.05);
+        color:#fff;
+        padding:10px;
+        font-size:13px;
+        resize: vertical;
+        box-sizing: border-box;
+      "></textarea>
+
+      <div id="tubefocus-add-error" style="min-height:18px; margin-top:8px; font-size:12px; color:#ff8b8b;"></div>
+
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:12px;">
+        <button id="tubefocus-add-cancel" style="
+          border:1px solid rgba(255,255,255,0.25);
+          background: transparent;
+          color:#eee;
+          border-radius:8px;
+          padding:8px 14px;
+          font-size:13px;
+          cursor:pointer;
+        ">Cancel</button>
+        <button id="tubefocus-add-save" style="
+          border:1px solid rgba(42,168,82,0.5);
+          background: rgba(42,168,82,0.24);
+          color:#fff;
+          border-radius:8px;
+          padding:8px 14px;
+          font-size:13px;
+          cursor:pointer;
+          font-weight:700;
+        ">Add Video</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('#tubefocus-add-close').onclick = close;
+  overlay.querySelector('#tubefocus-add-cancel').onclick = close;
+
+  const statusEl = overlay.querySelector('#tubefocus-transcript-status');
+  const errorEl = overlay.querySelector('#tubefocus-add-error');
+  const saveBtn = overlay.querySelector('#tubefocus-add-save');
+  const descEl = overlay.querySelector('#tubefocus-add-description');
+  const summaryToggleEl = overlay.querySelector('#tubefocus-save-summary-toggle');
+
+  const transcriptResult = await scrapeTranscriptFromYouTube();
+  const transcript = transcriptResult?.success ? transcriptResult.transcript : '';
+  const transcriptAvailable = !!transcript;
+
+  if (transcriptAvailable) {
+    statusEl.textContent = `Transcript available (${transcriptResult.segmentCount || 0} segments).`;
+    statusEl.style.background = 'rgba(42,168,82,0.16)';
+    statusEl.style.border = '1px solid rgba(42,168,82,0.45)';
+  } else {
+    statusEl.textContent = 'Transcript unavailable. Description is required to save this video.';
+    statusEl.style.background = 'rgba(219,122,56,0.2)';
+    statusEl.style.border = '1px solid rgba(219,122,56,0.45)';
+  }
+
+  saveBtn.onclick = async () => {
+    errorEl.textContent = '';
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    try {
+      const description = (descEl.value || '').trim();
+      if (!transcriptAvailable && !description) {
+        errorEl.textContent = 'Please add a description when transcript is unavailable.';
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Add Video';
         return;
       }
+
+      const saveResponse = await new Promise(resolve => {
+        chrome.runtime.sendMessage({
+          type: 'LIBRARIAN_SAVE_ITEM',
+          video_id: context.videoId,
+          title: context.title,
+          goal: context.goal,
+          score: context.score,
+          video_url: context.videoUrl,
+          transcript: transcriptAvailable ? transcript : '',
+          description
+        }, resolve);
+      });
+
+      if (!saveResponse?.success) {
+        throw new Error(saveResponse?.error || 'Failed to save video.');
+      }
+
+      if (summaryToggleEl.checked) {
+        const summaryResult = await scrapeSummaryFromYouTubeAskPanel();
+        if (summaryResult?.success && summaryResult.summary) {
+          await new Promise(resolve => {
+            chrome.runtime.sendMessage({
+              type: 'LIBRARIAN_SAVE_SUMMARY',
+              video_id: context.videoId,
+              title: context.title,
+              goal: context.goal,
+              video_url: context.videoUrl,
+              summary: summaryResult.summary,
+              source: 'youtube_ask'
+            }, resolve);
+          });
+        } else {
+          console.warn('[Add] Summary requested but extraction failed:', summaryResult?.error);
+        }
+      }
+
+      close();
+      showToast('Video added to library.');
+    } catch (error) {
+      console.error('[Add] Save failed:', error);
+      errorEl.textContent = error.message || 'Failed to add video.';
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Add Video';
     }
-
-    const saveResponse = await new Promise(resolve => {
-      chrome.runtime.sendMessage({
-        type: 'LIBRARIAN_SAVE_ITEM',
-        video_id: context.videoId,
-        title: context.title,
-        goal: context.goal,
-        score: context.score,
-        video_url: context.videoUrl,
-        transcript,
-        description
-      }, resolve);
-    });
-
-    if (saveResponse?.success) {
-      const mode = saveResponse.save_mode === 'transcript' ? 'with transcript' : 'as link + description';
-      showToast(`Saved ${mode}.`);
-    } else {
-      showToast(saveResponse?.error || 'Failed to save video.', true);
-    }
-  } catch (e) {
-    console.error('Save to library failed:', e);
-    showToast('Error saving video.', true);
-  } finally {
-    if (restore) restore();
-  }
-}
-
-async function handleSaveGeminiSummary() {
-  const restore = setActionButtonState('tubefocus-summary-btn', 'Saving summary...');
-  try {
-    const context = await getVideoContext();
-    if (!context) {
-      showToast('Could not find this video.', true);
-      return;
-    }
-
-    const summaryResult = await scrapeSummaryFromYouTubeAskPanel();
-    if (!summaryResult?.success || !summaryResult.summary) {
-      showToast(summaryResult?.error || 'Failed to capture YouTube summary.', true);
-      return;
-    }
-
-    const summaryResponse = await new Promise(resolve => {
-      chrome.runtime.sendMessage({
-        type: 'LIBRARIAN_SAVE_SUMMARY',
-        video_id: context.videoId,
-        title: context.title,
-        goal: context.goal,
-        video_url: context.videoUrl,
-        summary: summaryResult.summary,
-        source: 'youtube_ask'
-      }, resolve);
-    });
-
-    if (summaryResponse?.success) {
-      showToast('YouTube summary saved.');
-    } else {
-      showToast(summaryResponse?.error || 'Failed to save summary.', true);
-    }
-  } catch (e) {
-    console.error('Summary save failed:', e);
-    showToast('Error saving summary.', true);
-  } finally {
-    if (restore) restore();
-  }
+  };
 }
 
 function createYouTubeButton(id, label, iconPath) {
   const btn = document.createElement('button');
   btn.id = id;
-  btn.className = 'yt-spec-button-shape-next yt-spec-button-shape-next--size-m';
+  btn.className = 'yt-spec-button-shape-next yt-spec-button-shape-next--size-m tubefocus-icon-btn';
   btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);
   btn.style.cssText = `
     margin-right: 8px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 0;
     cursor: pointer;
     border: 1px solid var(--yt-spec-10-percent-layer, rgba(255,255,255,0.2));
-    border-radius: 18px;
-    padding: 0 12px;
-    height: 36px;
+    border-radius: 50%;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
     background: var(--yt-spec-badge-chip-background, rgba(255,255,255,0.08));
     color: var(--yt-spec-text-primary, #fff);
     outline: none;
   `;
   btn.innerHTML = `
-    <div class="yt-spec-button-shape-next__icon" style="margin-right: 6px; display: flex; align-items: center;">
-      <svg height="24" viewBox="0 0 24 24" width="24" focusable="false" style="pointer-events: none; display: block; width: 100%; height: 100%; fill: currentColor;">
+    <div class="yt-spec-button-shape-next__icon" style="margin-right:0; display:flex; align-items:center; justify-content:center;">
+      <svg height="18" viewBox="0 0 24 24" width="18" focusable="false" style="pointer-events:none; display:block; fill:currentColor;">
         ${iconPath}
       </svg>
     </div>
-    <div class="yt-spec-button-shape-next__button-text-content">${label}</div>
   `;
   return btn;
 }
@@ -1774,111 +2012,63 @@ function createYouTubeButton(id, label, iconPath) {
 setInterval(injectTubeFocusButtons, 2000);
 document.addEventListener('yt-navigate-finish', () => setTimeout(injectTubeFocusButtons, 500));
 
-function showChaptersUI(chapters) {
-  // Simple overlay for chapters
-  let chest = document.getElementById('tubefocus-chapters-overlay');
-  if (chest) chest.remove();
-
-  chest = document.createElement('div');
-  chest.id = 'tubefocus-chapters-overlay';
-  chest.style.cssText = `
-        position: fixed;
-        right: 20px;
-        top: 80px;
-        width: 300px;
-        background: rgba(30,30,30,0.95);
-        backdrop-filter: blur(10px);
-        color: white;
-        padding: 15px;
-        border-radius: 12px;
-        z-index: 9999;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-        font-family: 'Roboto', sans-serif;
-        max-height: 80vh;
-        overflow-y: auto;
-        border: 1px solid rgba(255,255,255,0.1);
-    `;
-
-  let html = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
-            <h3 style="margin:0; font-size:16px;">Video Chapters</h3>
-            <button id="close-chapters" style="background:none; border:none; color:white; cursor:pointer; font-size:20px;">×</button>
-        </div>
-        <div class="chapters-list">
-    `;
-
-  chapters.forEach(c => {
-    html += `
-            <div class="chapter-item" style="display:flex; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.05); cursor:pointer;">
-                <span style="color:#3ea6ff; font-weight:bold; width:50px; flex-shrink:0;">${c.time}</span>
-                <span style="opacity:0.9;">${c.title}</span>
-            </div>
-        `;
-  });
-
-  html += '</div>';
-  chest.innerHTML = html;
-  document.body.appendChild(chest);
-
-  // Close handler
-  document.getElementById('close-chapters').onclick = () => chest.remove();
-
-  // Click handlers
-  chest.querySelectorAll('.chapter-item').forEach((row, idx) => {
-    row.onclick = () => {
-      const timeStr = chapters[idx].time; // "MM:SS" or "H:MM:SS"
-      const parts = timeStr.split(':').map(Number);
-      let seconds = 0;
-      if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-      else seconds = parts[0] * 60 + parts[1];
-
-      document.querySelector('video').currentTime = seconds;
-      chest.remove();
-    };
-  });
-}
-
-// Fetch Auditor Verification
-async function fetchAuditorVerdict(videoId, title, goal) {
-  if (!videoId || !goal) return;
-
-  console.log('[Auditor] Fetching verdict...');
-  try {
-    const r = await new Promise(resolve => chrome.runtime.sendMessage({
-      type: 'AUDIT_VIDEO',
-      videoId, title, goal
-    }, resolve));
-
-    if (r.success && r.analysis) {
-      updateScoreWithVerdict(r.analysis);
-    }
-  } catch (e) {
-    console.error('[Auditor] Failed:', e);
-  }
-}
-
-function updateScoreWithVerdict(analysis) {
-  if (!scoreDisplay) return;
-
-  const verdict = analysis.community_verdict;
-  const badge = analysis.verdict_badge;
-
-  // Append to score display
-  const verdictDiv = document.createElement('div');
-  verdictDiv.style.cssText = `
-        font-size: 10px;
-        margin-top: 4px;
-        padding-top: 4px;
-        border-top: 1px solid rgba(255,255,255,0.2);
-        opacity: 0.9;
-    `;
-  verdictDiv.innerHTML = `
-        <span style="font-weight:bold;">${badge}</span> (${verdict}%)
-    `;
-  scoreDisplay.appendChild(verdictDiv);
-}
-
 let chaptersPanel = null;
+
+function summarizeChapterText(text) {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return 'Chapter';
+  const words = clean.split(' ').slice(0, 8);
+  let label = words.join(' ');
+  if (clean.split(' ').length > words.length) label += '...';
+  return label;
+}
+
+function generateTranscriptChapters(segments, durationSeconds) {
+  if (!Array.isArray(segments) || segments.length === 0) return [];
+
+  const parsed = segments
+    .map((segment) => ({
+      seconds: parseTimestampToSeconds(segment.timestamp),
+      text: (segment.text || '').trim()
+    }))
+    .filter((segment) => Number.isFinite(segment.seconds) && segment.text)
+    .sort((a, b) => a.seconds - b.seconds);
+
+  if (!parsed.length) return [];
+
+  const effectiveDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
+    ? durationSeconds
+    : parsed[parsed.length - 1].seconds;
+
+  const targetCount = Math.min(10, Math.max(4, Math.floor((effectiveDuration || 600) / 240)));
+  const step = Math.max(1, Math.floor(parsed.length / targetCount));
+
+  const chapters = [];
+  const seenTimes = new Set();
+  for (let i = 0; i < parsed.length; i += step) {
+    const segment = parsed[i];
+    if (seenTimes.has(segment.seconds)) continue;
+    seenTimes.add(segment.seconds);
+    chapters.push({
+      time: formatSecondsToLabel(segment.seconds),
+      title: summarizeChapterText(segment.text),
+      seconds: segment.seconds
+    });
+  }
+
+  const first = parsed[0];
+  if (first && !seenTimes.has(first.seconds)) {
+    chapters.unshift({
+      time: formatSecondsToLabel(first.seconds),
+      title: summarizeChapterText(first.text),
+      seconds: first.seconds
+    });
+  }
+
+  return chapters
+    .sort((a, b) => a.seconds - b.seconds)
+    .slice(0, 12);
+}
 
 function createChaptersPanel() {
   const panel = document.createElement('div');
@@ -1929,49 +2119,32 @@ async function loadChapters() {
   const container = document.getElementById('chapters-content');
   const footer = document.getElementById('chapters-footer');
 
-  // Get Video ID
-  const m = location.href.match(/[?&]v=([^&]+)/);
-  if (!m) {
-    container.innerHTML = '<div class="chapters-loading">No video found</div>';
+  if (!container || !footer) return;
+
+  if (!isYouTubeVideoPage()) {
+    container.innerHTML = '<div class="chapters-loading">Open a video to view chapters.</div>';
     return;
   }
-  const videoId = m[1];
 
   container.innerHTML = `
     <div class="chapters-loading">
       <div class="spinner" style="display:inline-block; border-left-color: #3ea6ff;"></div>
-      <div style="margin-top:10px">Navigator extracts wisdom...</div>
+      <div style="margin-top:10px">Reading transcript timestamps...</div>
     </div>
   `;
   footer.style.display = 'none';
 
   try {
-    // Call Background -> API
-    // Request chapters through background -> backend.
-    chrome.runtime.sendMessage({
-      type: 'GET_CHAPTERS',
-      videoId: videoId
-    }, (response) => {
+    const transcriptResult = await scrapeTranscriptFromYouTube();
+    if (!transcriptResult?.success || !Array.isArray(transcriptResult.segments) || transcriptResult.segments.length === 0) {
+      container.innerHTML = '<div class="chapters-loading">Transcript unavailable. Chapters could not be generated.</div>';
+      return;
+    }
 
-      if (chrome.runtime.lastError) {
-        container.innerHTML = `<div class="chapters-loading" style="color:#ff8a80">Error: ${chrome.runtime.lastError.message}</div>`;
-        return;
-      }
-
-      if (response && response.error) {
-        container.innerHTML = `<div class="chapters-loading" style="color:#ff8a80">Error: ${response.error}</div>`;
-        return;
-      }
-
-      if (!response || !response.result) {
-        container.innerHTML = `<div class="chapters-loading">No chapters found.</div>`;
-        return;
-      }
-
-      const result = response.result;
-      renderChapters(result.chapters, result.source);
-    });
-
+    const video = document.querySelector('video');
+    const duration = video && Number.isFinite(video.duration) ? video.duration : 0;
+    const chapters = generateTranscriptChapters(transcriptResult.segments, duration);
+    renderChapters(chapters, 'transcript_timestamps');
   } catch (e) {
     container.innerHTML = `<div class="chapters-loading" style="color:#ff8a80">${e.message}</div>`;
   }
@@ -1986,17 +2159,15 @@ function renderChapters(chapters, source) {
     return;
   }
 
+  const video = document.querySelector('video');
   let html = '';
   chapters.forEach(chapter => {
-    // Parse time to seconds for seeking
-    let seconds = 0;
-    const parts = chapter.time.split(':').reverse();
-    if (parts[0]) seconds += parseInt(parts[0]);
-    if (parts[1]) seconds += parseInt(parts[1]) * 60;
-    if (parts[2]) seconds += parseInt(parts[2]) * 3600;
+    const seconds = Number.isFinite(chapter.seconds)
+      ? chapter.seconds
+      : parseTimestampToSeconds(chapter.time);
 
     html += `
-      <div class="chapter-item" onclick="document.querySelector('video').currentTime = ${seconds};">
+      <div class="chapter-item" data-seconds="${seconds}">
         <div class="chapter-time">${chapter.time}</div>
         <div class="chapter-title">${chapter.title}</div>
       </div>
@@ -2004,17 +2175,21 @@ function renderChapters(chapters, source) {
   });
 
   container.innerHTML = html;
+  container.querySelectorAll('.chapter-item').forEach((row) => {
+    row.addEventListener('click', () => {
+      if (!video) return;
+      const seconds = Number(row.getAttribute('data-seconds'));
+      if (!Number.isFinite(seconds)) return;
+      video.currentTime = Math.max(0, seconds);
+    });
+  });
 
   // Update footer with source info
-  let sourceText = 'Source: Unknown';
-  let sourceIcon = '❓';
-
-  if (source === 'comments') {
-    sourceText = 'Extracted from Community Comments';
-    sourceIcon = '💬';
-  } else if (source === 'ai_generated') {
-    sourceText = 'Generated by AI from Transcript';
-    sourceIcon = '🤖';
+  let sourceText = 'Generated from transcript timestamps';
+  let sourceIcon = '🧭';
+  if (source === 'transcript_timestamps') {
+    sourceText = 'Generated from transcript timestamps';
+    sourceIcon = '📝';
   }
 
   footer.innerHTML = `<span>${sourceIcon}</span> <span>${sourceText}</span>`;

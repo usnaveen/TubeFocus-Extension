@@ -53,6 +53,11 @@
         <option value="strict">🚫 Strict - No distractions allowed</option>
       </select>
 
+      <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:0.85rem;">
+        <input type="checkbox" id="coachEnabled" checked>
+        Enable Coach Interventions
+      </label>
+
       <div id="customInstructionsContainer" style="display: none; margin-top: 8px;">
         <textarea id="coachInstructions"
           placeholder="e.g., Allow gaming videos for 10 min breaks, remind me to stretch every 30 min..."
@@ -114,22 +119,6 @@
         </button>
       </div>
 
-      <!-- Auditor Results -->
-      <div id="auditResult"
-        style="margin-top: 12px; padding: 10px; background: var(--panel); border-radius: 6px; border: 1px solid var(--border); display: none;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-          <span style="font-weight: bold;">Clickbait Score:</span>
-          <span id="clickbaitScore" style="font-weight: bold; color: var(--accent);">--</span>
-        </div>
-        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-          <span style="font-weight: bold;">Info Density:</span>
-          <span id="densityScore" style="font-weight: bold; color: var(--accent);">--</span>
-        </div>
-        <div style="margin-top: 6px; font-size: 0.9em; font-style: italic; color: var(--text);">
-          Recommendation: <span id="auditRecommendation">--</span>
-        </div>
-      </div>
-
       <div id="saveVideoStatus" class="status-message"></div>
     </section>
 
@@ -142,58 +131,6 @@
       <canvas id="scoreChart" width="240" height="120"></canvas>
     </section>
 
-    <!-- Settings -->
-    <section id="settings">
-      <div class="settings-header">
-        <button id="backToMain" class="back-button">
-          <svg fill="currentColor" height="20px" width="20px" version="1.1" xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 512 512">
-            <g>
-              <g>
-                <path
-                  d="M441.751,475.584L222.166,256L441.75,36.416c6.101-6.101,7.936-15.275,4.629-23.253C443.094,5.184,435.286,0,426.667,0 H320.001c-5.675,0-11.093,2.24-15.083,6.251L70.251,240.917c-8.341,8.341-8.341,21.824,0,30.165l234.667,234.667 c3.989,4.011,9.408,6.251,15.083,6.251h106.667c8.619,0,16.427-5.184,19.712-13.163 C449.687,490.858,447.852,481.685,441.751,475.584z" />
-              </g>
-            </g>
-          </svg>
-        </button>
-        <h2>Settings</h2>
-      </div>
-
-      <!-- Theme Selection -->
-      <div class="settings-row">
-        <div>
-          <span style="font-weight:bold;">Theme</span>
-          <div style="font-size:0.9em; color:#ccc; margin-top:0.2em;">Choose your preferred color scheme</div>
-        </div>
-        <select id="themeSelector" class="theme-selector">
-          <option value="crimson-vanilla">Crimson Flame & Vanilla Cream</option>
-          <option value="vanilla-crimson">Vanilla Cream & Crimson Flame</option>
-          <option value="darkreader">Darkreader Theme</option>
-          <option value="cocoa-lemon">Cocoa Brown & Lemon Zest</option>
-          <option value="golden-ocean">Golden Honey & Ocean Depths</option>
-          <option value="dusty-apricot">Dusty Teal & Pale Apricot</option>
-          <option value="spiced-forest">Spiced Orange & Deep Forest</option>
-        </select>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <span style="font-weight:bold;">Share Session History</span>
-          <div style="font-size:0.9em; color:#ccc; margin-top:0.2em;">Allow the extension to upload your session history
-            to the cloud for analysis.</div>
-        </div>
-        <label class="ios-switch">
-          <input type="checkbox" id="shareHistoryToggle" />
-          <span class="slider"></span>
-        </label>
-      </div>
-    </section>
-
-    <!-- Footer -->
-    <footer>
-      <span>Meet the Creator</span>
-      <img id="settingsIcon" class="settings-icon" src="Settings.svg" alt="Settings" title="Settings" />
-    </footer>
   </div>
 
 
