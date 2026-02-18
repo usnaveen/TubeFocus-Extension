@@ -11,11 +11,53 @@ const CONFIG = {
 
 const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;
 
+function persistSessionSnapshot(reason = 'manual_stop') {
+  chrome.storage.local.get(['sessionStartTime', 'goal', 'watchedScores', 'highlights', 'totalWatchTime'], (state) => {
+    try {
+      const watchedScores = Array.isArray(state.watchedScores) ? state.watchedScores : [];
+      const normalizedScores = watchedScores.map((s) => (s > 1 ? s : s * 100));
+      const avgScore = normalizedScores.length
+        ? (normalizedScores.reduce((a, b) => a + b, 0) / normalizedScores.length)
+        : 0;
+
+      const sessionId = state.sessionStartTime
+        ? `session_${state.sessionStartTime}`
+        : `session_${Date.now()}`;
+
+      const payload = {
+        session_id: sessionId,
+        goal: state.goal || '',
+        focus_score: Number(avgScore.toFixed(2)),
+        videos_watched: normalizedScores.length,
+        highlights_count: Array.isArray(state.highlights) ? state.highlights.length : 0,
+        watch_time_minutes: Math.floor((state.totalWatchTime || 0) / 60),
+        date: new Date().toISOString().slice(0, 10),
+        created_at: new Date().toISOString(),
+        reason
+      };
+
+      fetch(`${CONFIG.API_BASE_URL}/firestore/sessions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': CONFIG.API_KEY
+        },
+        body: JSON.stringify(payload)
+      }).catch((err) => {
+        console.warn('[background] Session snapshot save failed:', err);
+      });
+    } catch (err) {
+      console.warn('[background] Session snapshot build failed:', err);
+    }
+  });
+}
+
 // --- Alarms for session management ---
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === 'sessionEnd') {
     chrome.storage.local.get(['sessionEndTime'], data => {
       if (Date.now() >= data.sessionEndTime) {
+        persistSessionSnapshot('timer_end');
         // End the session and set flag to show summary when popup opens
         chrome.storage.local.set({ sessionActive: false, sessionEndTime: null, showSummaryOnOpen: true }, () => {
           // Show summary
@@ -74,6 +116,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         console.log('[background] Session started with coach mode:', msg.coachMode);
       });
     } else if (msg.type === 'STOP_SESSION') {
+      persistSessionSnapshot('manual_stop');
       // End session but preserve scores for summary and set flag to show summary
       chrome.storage.local.set({ sessionActive: false, sessionEndTime: null, showSummaryOnOpen: true }, () => {
         chrome.alarms.clear('sessionEnd');

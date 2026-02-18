@@ -3,19 +3,21 @@
    ============================== */
 
 // ---------- Config ----------
-const API_BASE_URL = 'https://tubefocus-backend-320520374498.us-central1.run.app';
-let AUTH_TOKEN = '';
+let API_BASE_URL = 'https://yt-scorer-api-933573987016.us-central1.run.app';
+let API_KEY = 'test_key';
 
 function getHeaders() {
-    const h = { 'Content-Type': 'application/json' };
-    if (AUTH_TOKEN) h['Authorization'] = `Bearer ${AUTH_TOKEN}`;
-    return h;
+    return {
+        'Content-Type': 'application/json',
+        'X-API-KEY': API_KEY
+    };
 }
 
 // ---------- State ----------
 let contextVideo = null;   // Dragged video for focused-mode chat
 let dashChart = null;      // Chart.js instance
 let savedVideosCache = []; // Cache for drag source
+let highlightsCache = [];  // Cache for fallback lists/stats
 
 // ---------- Witty Messages ----------
 const WITTY = [
@@ -32,11 +34,15 @@ const WITTY = [
 //  Init
 // ========================================================
 document.addEventListener('DOMContentLoaded', async () => {
-    // Get token from Chrome storage if available
+    // Load optional overrides from extension storage
     if (typeof chrome !== 'undefined' && chrome.storage) {
         try {
-            const data = await chrome.storage.local.get(['authToken']);
-            if (data.authToken) AUTH_TOKEN = data.authToken;
+            const localData = await chrome.storage.local.get(['apiBaseUrl']);
+            if (localData.apiBaseUrl) API_BASE_URL = localData.apiBaseUrl;
+        } catch (e) { /* not in extension context */ }
+        try {
+            const syncData = await chrome.storage.sync.get(['apiKey']);
+            if (syncData.apiKey) API_KEY = syncData.apiKey;
         } catch (e) { /* not in extension context */ }
     }
 
@@ -76,8 +82,10 @@ async function loadStatsPanel() {
             document.getElementById('videos-watched').textContent = totalVids;
             renderChart(sessions);
         } else {
-            document.getElementById('avg-score').textContent = '--';
-            document.getElementById('videos-watched').textContent = '--';
+            // Fallback to local extension stats when cloud sessions are absent.
+            const localStats = await getLocalSessionFallback();
+            document.getElementById('avg-score').textContent = localStats.avgScoreLabel;
+            document.getElementById('videos-watched').textContent = localStats.videosLabel;
         }
     } catch (e) {
         console.warn('Stats load failed:', e);
@@ -85,6 +93,27 @@ async function loadStatsPanel() {
         document.getElementById('videos-watched').textContent = '--';
         document.getElementById('saved-count').textContent = '--';
         document.getElementById('header-stats').textContent = 'Offline';
+    }
+}
+
+async function getLocalSessionFallback() {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+        return { avgScoreLabel: '--', videosLabel: '--' };
+    }
+    try {
+        const local = await chrome.storage.local.get(['watchedScores']);
+        const watchedScores = local.watchedScores || [];
+        if (!watchedScores.length) {
+            return { avgScoreLabel: '--', videosLabel: '--' };
+        }
+        const normalized = watchedScores.map(s => (s > 1 ? s : s * 100));
+        const avg = Math.round(normalized.reduce((a, b) => a + b, 0) / normalized.length);
+        return {
+            avgScoreLabel: `${avg}%`,
+            videosLabel: `${normalized.length}`
+        };
+    } catch (_e) {
+        return { avgScoreLabel: '--', videosLabel: '--' };
     }
 }
 
@@ -146,12 +175,31 @@ async function loadSavedVideos() {
 
         badge.textContent = videos.length;
 
-        if (!videos.length) {
+        if (!videos.length && highlightsCache.length > 0) {
+            // Fallback: build a pseudo saved list from highlights so drag-to-chat still works.
+            const byVideo = new Map();
+            highlightsCache.forEach(h => {
+                const vid = h.video_id;
+                if (!vid || byVideo.has(vid)) return;
+                byVideo.set(vid, {
+                    video_id: vid,
+                    title: h.video_title || vid,
+                    save_mode: 'from_highlights',
+                    description: 'Recovered from highlights',
+                    thumbnail_url: h.thumbnail_url || ''
+                });
+            });
+            savedVideosCache = Array.from(byVideo.values());
+        }
+
+        if (!savedVideosCache.length) {
+            badge.textContent = '0';
             list.innerHTML = '<div class="empty-state">No saved videos yet. Use the extension to save videos!</div>';
             return;
         }
 
-        list.innerHTML = videos.map((v, i) => `
+        badge.textContent = `${savedVideosCache.length}`;
+        list.innerHTML = savedVideosCache.map((v, i) => `
       <div class="video-item"
            draggable="true"
            data-idx="${i}"
@@ -159,7 +207,7 @@ async function loadSavedVideos() {
         <div class="video-title">${esc(v.title || v.video_id)}</div>
         <div class="video-meta">
           <span class="save-mode-badge">
-            ${v.save_mode === 'link_only' ? '⊙ Link only' : '✦ Transcript indexed'}
+            ${v.save_mode === 'link_only' ? '⊙ Link only' : (v.save_mode === 'from_highlights' ? '✦ From highlights' : '✦ Transcript indexed')}
           </span>
           ${v.description ? `<span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.description)}</span>` : ''}
         </div>
@@ -194,6 +242,18 @@ async function loadRecentSessions() {
         const sessions = data.sessions || [];
 
         if (!sessions.length) {
+            const localStats = await getLocalSessionFallback();
+            if (localStats.videosLabel !== '--') {
+                list.innerHTML = `
+          <div class="session-item">
+            <div class="session-date">Local session cache</div>
+            <div class="session-stats">
+              <span>⊕ ${esc(localStats.avgScoreLabel)} focus</span>
+              <span>▶ ${esc(localStats.videosLabel)} videos</span>
+            </div>
+          </div>`;
+                return;
+            }
             list.innerHTML = '<div class="empty-state">No sessions recorded yet.</div>';
             return;
         }
@@ -225,6 +285,7 @@ async function loadHighlights() {
         const res = await fetch(`${API_BASE_URL}/librarian/get_highlights`, { headers: getHeaders() });
         const data = await res.json();
         const highlights = data.highlights || [];
+        highlightsCache = highlights;
 
         badge.textContent = highlights.length;
 
@@ -236,13 +297,18 @@ async function loadHighlights() {
         list.innerHTML = highlights.map(h => `
       <div class="highlight-item">
         <div class="highlight-meta">
-          <span class="highlight-timestamp">${formatTime(h.timestamp || 0)}</span>
+          <span class="highlight-timestamp">${esc(h.range_label || formatTime(h.timestamp || 0))}</span>
           <span class="highlight-video-name">${esc(h.video_title || h.video_id || '')}</span>
         </div>
-        <div class="highlight-text">"${esc(h.text || '')}"</div>
-        ${h.note ? `<div class="highlight-note">${esc(h.note)}</div>` : ''}
+        <div class="highlight-text">"${esc(h.note || h.text || h.transcript || 'Highlight saved')}"</div>
+        ${h.note && h.transcript ? `<div class="highlight-note">${esc(h.transcript.slice(0, 180))}${h.transcript.length > 180 ? '...' : ''}</div>` : ''}
       </div>
     `).join('');
+
+        if (!savedVideosCache.length && highlights.length > 0) {
+            // Rebuild saved-video panel using highlight-derived fallback entries.
+            loadSavedVideos();
+        }
     } catch (e) {
         console.warn('Highlights load failed:', e);
         list.innerHTML = '<div class="empty-state">Could not load highlights.</div>';
@@ -329,6 +395,9 @@ async function sendMessage() {
             headers: getHeaders(),
             body: JSON.stringify(body),
         });
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+        }
         const data = await res.json();
 
         // Remove loading
@@ -336,8 +405,9 @@ async function sendMessage() {
         if (loadingEl) loadingEl.remove();
 
         // Bot answer
-        const answerText = data.answer || data.response || 'I could not find relevant information.';
-        const sources = data.sources || [];
+        const payload = data.response || data || {};
+        const answerText = payload.answer || 'I could not find relevant information.';
+        const sources = payload.sources || [];
         appendMessageWithSources('bot', answerText, sources);
 
     } catch (e) {
@@ -383,7 +453,12 @@ function appendMessageWithSources(type, text, sources) {
             let html = `<div class="source-title">${esc(source.title || 'Video')}</div>`;
 
             // YouTube embed
-            if (source.video_id) {
+            if (source.embed_url) {
+                html += `<iframe class="source-embed"
+          src="${esc(source.embed_url)}"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowfullscreen></iframe>`;
+            } else if (source.video_id) {
                 html += `<iframe class="source-embed"
           src="https://www.youtube.com/embed/${esc(source.video_id)}"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -404,9 +479,9 @@ function appendMessageWithSources(type, text, sources) {
                 highlights.forEach(h => {
                     const ts = h.timestamp || 0;
                     html += `<div class="source-highlight-item" onclick="jumpToTimestamp('${esc(source.video_id)}',${ts})">
-            <span class="source-highlight-time">${formatTime(ts)}</span>
+            <span class="source-highlight-time">${esc(h.range_label || formatTime(ts))}</span>
             <span class="source-highlight-text">
-              ${esc(h.text || '')}
+              ${esc(h.note || h.text || h.transcript || '')}
               ${h.note ? `<span class="source-highlight-note">Note: ${esc(h.note)}</span>` : ''}
             </span>
             <span class="source-highlight-play">▶</span>
