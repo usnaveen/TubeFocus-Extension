@@ -18,6 +18,7 @@ let contextVideo = null;   // Dragged video for focused-mode chat
 let dashChart = null;      // Chart.js instance
 let savedVideosCache = []; // Cache for drag source
 let highlightsCache = [];  // Cache for fallback lists/stats
+let filteredRemovedCache = []; // Recently filtered-out recommendations
 
 // ---------- Witty Messages ----------
 const WITTY = [
@@ -52,6 +53,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadSavedVideos();
     loadRecentSessions();
     loadHighlights();
+    loadFilteredCounter();
+    setupSystemDetailsModal();
     setupChat();
 });
 
@@ -296,8 +299,8 @@ async function loadHighlights() {
             return;
         }
 
-        list.innerHTML = highlights.map(h => `
-      <div class="highlight-item">
+        list.innerHTML = highlights.map((h, idx) => `
+      <div class="highlight-item" draggable="true" data-hidx="${idx}" onclick="window.open('${esc(getHighlightWatchUrl(h))}','_blank')">
         <div class="highlight-meta">
           <span class="highlight-timestamp">${esc(h.range_label || formatTime(h.timestamp || 0))}</span>
           <span class="highlight-video-name">${esc(h.video_title || h.video_id || '')}</span>
@@ -307,6 +310,25 @@ async function loadHighlights() {
       </div>
     `).join('');
 
+        // Drag start/end on highlight items for focused chat context.
+        list.querySelectorAll('.highlight-item').forEach(el => {
+            el.addEventListener('dragstart', e => {
+                const idx = Number(el.dataset.hidx || -1);
+                const h = highlightsCache[idx];
+                if (!h || !h.video_id) return;
+                const payload = {
+                    video_id: h.video_id,
+                    title: h.video_title || `Video ${h.video_id}`,
+                    description: h.note || h.transcript || '',
+                    from: 'highlight'
+                };
+                e.dataTransfer.effectAllowed = 'copy';
+                e.dataTransfer.setData('application/json', JSON.stringify(payload));
+                el.classList.add('dragging');
+            });
+            el.addEventListener('dragend', () => el.classList.remove('dragging'));
+        });
+
         if (!savedVideosCache.length && highlights.length > 0) {
             // Rebuild saved-video panel using highlight-derived fallback entries.
             loadSavedVideos();
@@ -315,6 +337,121 @@ async function loadHighlights() {
         console.warn('Highlights load failed:', e);
         list.innerHTML = '<div class="empty-state">Could not load highlights.</div>';
     }
+}
+
+async function loadFilteredCounter() {
+    const totalEl = document.getElementById('filtered-total');
+    const listEl = document.getElementById('filtered-popup-list');
+    if (!totalEl || !listEl) return;
+
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+        totalEl.textContent = '0';
+        listEl.innerHTML = '<div class="removed-popup-empty">Available inside extension context only.</div>';
+        return;
+    }
+
+    try {
+        const local = await chrome.storage.local.get(['filteredVideosRemovedTotal', 'filteredVideosRemovedRecent']);
+        const total = Number(local.filteredVideosRemovedTotal || 0);
+        filteredRemovedCache = Array.isArray(local.filteredVideosRemovedRecent) ? local.filteredVideosRemovedRecent : [];
+        totalEl.textContent = `${total}`;
+
+        if (!filteredRemovedCache.length) {
+            listEl.innerHTML = '<div class="removed-popup-empty">No filtered videos recorded yet.</div>';
+            return;
+        }
+
+        listEl.innerHTML = filteredRemovedCache.slice(0, 20).map((item) => `
+      <a class="removed-item" href="${esc(item.url || `https://youtube.com/watch?v=${item.video_id || ''}`)}" target="_blank" rel="noopener noreferrer">
+        <img class="removed-thumb" src="${esc(item.thumbnail_url || '')}" alt="thumbnail">
+        <div class="removed-meta">
+          <div class="removed-title">${esc(item.title || item.video_id || 'Removed video')}</div>
+          <div class="removed-reason">${esc((item.reason || 'filtered').replace(/_/g, ' '))}</div>
+        </div>
+      </a>
+    `).join('');
+    } catch (e) {
+        console.warn('Filtered counter load failed:', e);
+        totalEl.textContent = '0';
+        listEl.innerHTML = '<div class="removed-popup-empty">Could not load removed videos.</div>';
+    }
+}
+
+function setupSystemDetailsModal() {
+    const openBtn = document.getElementById('system-details-btn');
+    const modal = document.getElementById('system-details-modal');
+    const closeBtn = document.getElementById('system-details-close');
+    const grid = document.getElementById('system-details-grid');
+    if (!openBtn || !modal || !closeBtn || !grid) return;
+
+    const blockedChannels = Array.isArray(self.TUBEFOCUS_ENTERTAINMENT_CHANNELS)
+        ? self.TUBEFOCUS_ENTERTAINMENT_CHANNELS
+        : [];
+
+    const cards = [
+        {
+            title: 'RAG + Models',
+            body: [
+                'Chat model: gemini-2.0-flash',
+                'Embeddings: models/text-embedding-004',
+                'Vector store: Firestore vector search (cosine)',
+                'Flow: retrieve -> source-card enrich -> generate'
+            ].join('\n')
+        },
+        {
+            title: 'Chunking Strategy',
+            body: [
+                'Tier 1: video summary (LLM-generated)',
+                'Tier 2: ~90s temporal windows',
+                'Tier 3: ~20s windows with 10s overlap',
+                'Fallback: 500-char flat chunks when timestamps unavailable'
+            ].join('\n')
+        },
+        {
+            title: 'Core Prompts',
+            body: [
+                'Score mode: title_and_description',
+                'Summary prompt: "Summarize this video transcript in 2-3 sentences..."',
+                'Librarian system prompt: "Use only the user\'s saved library context..."'
+            ].join('\n')
+        },
+        {
+            title: 'Filter Logic',
+            body: [
+                'Blocked entertainment channels + keyword checks',
+                'Local logistic model threshold: 0.45',
+                'Heuristic drop: entertainment pattern + no goal overlap'
+            ].join('\n')
+        },
+        {
+            title: `Blocked Channels (${blockedChannels.length})`,
+            body: blockedChannels.length ? blockedChannels.join('\n') : 'No blocklist loaded.'
+        },
+        {
+            title: 'Telemetry Counters',
+            body: [
+                'filteredVideosRemovedTotal: cumulative removed count',
+                'filteredVideosRemovedRecent: latest removed videos',
+                'watchedScores: session score stream'
+            ].join('\n')
+        }
+    ];
+
+    const html = cards.map((card) => `
+    <section class="details-card">
+      <div class="details-card-title">${esc(card.title)}</div>
+      <pre>${esc(card.body)}</pre>
+    </section>
+  `).join('');
+
+    openBtn.addEventListener('click', () => {
+        grid.innerHTML = html;
+        modal.classList.add('open');
+    });
+    closeBtn.addEventListener('click', () => modal.classList.remove('open'));
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.classList.remove('open');
+    });
 }
 
 // ========================================================
@@ -582,6 +719,13 @@ function getWatchUrl(video) {
     const id = extractYoutubeId(video.video_id || '');
     if (!id) return '#';
     return `https://youtube.com/watch?v=${id}`;
+}
+
+function getHighlightWatchUrl(highlight) {
+    const id = extractYoutubeId(highlight?.video_id || '');
+    if (!id) return '#';
+    const ts = Math.max(0, Number(highlight?.timestamp || 0));
+    return `https://youtube.com/watch?v=${id}${ts ? `&t=${Math.floor(ts)}s` : ''}`;
 }
 
 function formatTime(seconds) {

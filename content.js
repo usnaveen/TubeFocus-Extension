@@ -259,6 +259,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (scoreDisplay && currentScore !== null) {
         let category = 'Simple Mode'; // Simplified category for the simplified version
         updateScoreDisplay('success', { score: currentScore, category: category });
+        updateFilterStatusBadge();
       }
       break;
 
@@ -412,6 +413,7 @@ async function tryScore() {
       // console.log('[content.js] Category resolved:', category, 'from response:', response);
 
       updateScoreDisplay('success', { score: currentScore, category: category });
+      updateFilterStatusBadge();
 
       chrome.runtime.sendMessage({ type: 'NEW_SCORE', score: currentScore });
 
@@ -450,6 +452,7 @@ async function tryScore() {
 
       removeColor(); // Use the new function on error as well
       updateScoreDisplay('error', { message: userMsg });
+      updateFilterStatusBadge();
       showErrorOverlay(userMsg);
       chrome.runtime.sendMessage({ type: 'ERROR', error: userMsg }, () => {
         if (chrome.runtime.lastError) { /* do nothing */ }
@@ -2199,6 +2202,7 @@ function renderChapters(chapters, source) {
 // ===== LOCAL RECOMMENDATION FILTER =====
 
 const recommendationDecisionCache = new Map();
+const filteredRecommendationRuntimeSet = new Set();
 let gatekeeperObserver = null;
 let scanTimeout = null;
 const RECOMMENDATION_SELECTORS = [
@@ -2442,13 +2446,16 @@ function updateFilterStatusBadge() {
   const targetHost = host || document.body;
 
   const hiddenCount = document.querySelectorAll('.tubefocus-filter-hidden').length;
+  const scorePct = Number.isFinite(currentScore)
+    ? (currentScore > 1 ? Math.round(currentScore) : Math.round(currentScore * 100))
+    : null;
   let badge = existing;
   if (!badge) {
     badge = document.createElement('div');
     badge.id = 'tubefocus-filter-status';
     badge.style.cssText = `
       margin: 8px 0 10px;
-      padding: 8px 10px;
+      padding: 8px 12px;
       border-radius: 8px;
       background: rgba(42, 168, 82, 0.18);
       color: var(--yt-spec-text-primary, #fff);
@@ -2459,16 +2466,53 @@ function updateFilterStatusBadge() {
     `;
     if (useFloatingHost) {
       badge.style.position = 'fixed';
-      badge.style.top = '70px';
-      badge.style.left = '14px';
+      badge.style.bottom = '62px';
+      badge.style.left = '20px';
       badge.style.zIndex = '10040';
       targetHost.appendChild(badge);
     } else {
-      targetHost.insertBefore(badge, targetHost.firstChild);
+      badge.style.position = 'fixed';
+      badge.style.bottom = '62px';
+      badge.style.left = '20px';
+      badge.style.zIndex = '10040';
+      targetHost.appendChild(badge);
     }
   }
 
-  badge.textContent = `TubeFocus filter: ${hiddenCount} hidden`;
+  badge.textContent = `TubeFocus filter: ${hiddenCount} hidden${scorePct !== null ? ` | Score: ${scorePct}%` : ''}`;
+}
+
+function buildFilteredVideoPayload(recommendation, decision) {
+  if (!recommendation || !recommendation.id) return null;
+  return {
+    video_id: recommendation.id,
+    title: recommendation.title || recommendation.id,
+    channel: recommendation.channel || '',
+    reason: decision?.reason || 'filtered',
+    score: typeof decision?.score === 'number' ? Number(decision.score.toFixed(3)) : null,
+    thumbnail_url: `https://i.ytimg.com/vi/${recommendation.id}/hqdefault.jpg`,
+    url: `https://www.youtube.com/watch?v=${recommendation.id}`,
+    removed_at: new Date().toISOString()
+  };
+}
+
+function recordFilteredRecommendation(recommendation, decision) {
+  if (!decision?.hide || !recommendation?.id) return;
+  if (filteredRecommendationRuntimeSet.has(recommendation.id)) return;
+  filteredRecommendationRuntimeSet.add(recommendation.id);
+
+  const payload = buildFilteredVideoPayload(recommendation, decision);
+  if (!payload) return;
+
+  chrome.storage.local.get(['filteredVideosRemovedTotal', 'filteredVideosRemovedRecent'], (data) => {
+    const total = Number(data.filteredVideosRemovedTotal || 0) + 1;
+    const recent = Array.isArray(data.filteredVideosRemovedRecent) ? data.filteredVideosRemovedRecent : [];
+    const deduped = [payload, ...recent.filter(item => item.video_id !== payload.video_id)];
+    chrome.storage.local.set({
+      filteredVideosRemovedTotal: total,
+      filteredVideosRemovedRecent: deduped.slice(0, 40)
+    });
+  });
 }
 
 function isBlockedEntertainmentChannel(channelName) {
@@ -2593,6 +2637,7 @@ function processSidebarItem(element) {
     recommendationDecisionCache.set(recommendation.id, decision);
   }
   applyRecommendationFilter(recommendation.element, decision);
+  recordFilteredRecommendation(recommendation, decision);
   recommendation.element.setAttribute('data-tubefocus-filtered', '1');
 }
 
@@ -2609,6 +2654,7 @@ function scheduleBatchProcessing() {
 
 function clearGatekeeperDecorations() {
   recommendationDecisionCache.clear();
+  filteredRecommendationRuntimeSet.clear();
   document.querySelectorAll('.tubefocus-filter-hidden').forEach((el) => {
     el.classList.remove('tubefocus-filter-hidden');
   });

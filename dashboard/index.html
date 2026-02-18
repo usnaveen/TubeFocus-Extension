@@ -111,6 +111,7 @@
             display: flex;
             align-items: center;
             gap: 16px;
+            position: relative;
         }
 
         .header-connection {
@@ -146,6 +147,120 @@
         .header-stats {
             font-size: 0.8rem;
             color: var(--tf-text-secondary);
+        }
+
+        .header-chip {
+            font-size: 0.74rem;
+            font-weight: 700;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--tf-border);
+            background: rgba(0, 0, 0, 0.16);
+            color: var(--tf-primary);
+            cursor: default;
+            position: relative;
+        }
+
+        .header-chip .count {
+            font-family: 'Roboto Mono', monospace;
+            margin-left: 4px;
+        }
+
+        .removed-popup {
+            position: absolute;
+            top: 34px;
+            right: 0;
+            width: 360px;
+            max-height: 380px;
+            overflow: auto;
+            background: rgba(20, 3, 5, 0.96);
+            border: 1px solid var(--tf-border);
+            border-radius: 12px;
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
+            display: none;
+            padding: 8px;
+            z-index: 1200;
+        }
+
+        .header-chip:hover .removed-popup {
+            display: block;
+        }
+
+        .removed-popup-title {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--tf-text-secondary);
+            margin: 4px 4px 8px;
+            font-weight: 700;
+        }
+
+        .removed-popup-empty {
+            color: var(--tf-text-secondary);
+            font-size: 0.78rem;
+            padding: 10px;
+        }
+
+        .removed-item {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            padding: 8px;
+            border-radius: 8px;
+            text-decoration: none;
+            border: 1px solid transparent;
+        }
+
+        .removed-item:hover {
+            border-color: var(--tf-border);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .removed-thumb {
+            width: 96px;
+            height: 54px;
+            border-radius: 6px;
+            object-fit: cover;
+            background: rgba(255, 255, 255, 0.08);
+            flex-shrink: 0;
+        }
+
+        .removed-meta {
+            min-width: 0;
+            color: var(--tf-primary);
+        }
+
+        .removed-title {
+            font-size: 0.78rem;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .removed-reason {
+            font-size: 0.68rem;
+            color: var(--tf-text-secondary);
+            margin-top: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .header-btn {
+            border: 1px solid var(--tf-border);
+            background: rgba(0, 0, 0, 0.18);
+            color: var(--tf-primary);
+            border-radius: 999px;
+            padding: 7px 12px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .header-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
         }
 
         /* ========== BENTO GRID ========== */
@@ -370,6 +485,11 @@
         .highlight-item:hover {
             background: rgba(0, 0, 0, 0.35);
             border-color: var(--tf-border);
+        }
+
+        .highlight-item.dragging {
+            opacity: 0.5;
+            border: 1px dashed var(--tf-primary);
         }
 
         .highlight-meta {
@@ -716,6 +836,90 @@
             font-size: 0.82rem;
         }
 
+        .details-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 2, 3, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            padding: 24px;
+        }
+
+        .details-modal.open {
+            display: flex;
+        }
+
+        .details-panel {
+            width: min(1100px, 100%);
+            max-height: 86vh;
+            overflow: auto;
+            border-radius: 14px;
+            border: 1px solid var(--tf-border);
+            background: #26070a;
+            box-shadow: 0 20px 44px rgba(0, 0, 0, 0.45);
+            padding: 14px;
+        }
+
+        .details-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .details-title {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--tf-primary);
+            font-weight: 700;
+        }
+
+        .details-close {
+            border: 1px solid var(--tf-border);
+            background: transparent;
+            color: var(--tf-primary);
+            border-radius: 8px;
+            padding: 5px 10px;
+            font-size: 0.72rem;
+            cursor: pointer;
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .details-card {
+            background: rgba(0, 0, 0, 0.24);
+            border: 1px solid rgba(253, 240, 213, 0.18);
+            border-radius: 10px;
+            padding: 10px;
+            min-height: 120px;
+        }
+
+        .details-card-title {
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            color: var(--tf-text-secondary);
+            margin-bottom: 6px;
+            font-weight: 700;
+        }
+
+        .details-card pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--tf-primary);
+            line-height: 1.5;
+        }
+
         /* ========== FOCUS STATES ========== */
         button:focus-visible,
         input:focus-visible {
@@ -735,6 +939,15 @@
             </div>
         </div>
         <div class="header-right">
+            <div class="header-chip" id="filtered-chip">
+                Filtered removed
+                <span class="count" id="filtered-total">0</span>
+                <div class="removed-popup" id="filtered-popup">
+                    <div class="removed-popup-title">Recently removed videos</div>
+                    <div id="filtered-popup-list"></div>
+                </div>
+            </div>
+            <button class="header-btn" id="system-details-btn" type="button">System Details</button>
             <span class="header-connection" id="backend-status">
                 <span class="status-dot"></span>
                 <span class="status-text">Connecting</span>
@@ -821,6 +1034,17 @@
 
     </main>
 
+    <div class="details-modal" id="system-details-modal">
+        <div class="details-panel">
+            <div class="details-head">
+                <div class="details-title">TubeFocus Internal Workings</div>
+                <button class="details-close" id="system-details-close" type="button">Close</button>
+            </div>
+            <div class="details-grid" id="system-details-grid"></div>
+        </div>
+    </div>
+
+    <script src="../local_entertainment_channels.js"></script>
     <script src="../libs/chart.min.js"></script>
     <script src="app.js"></script>
 </body>
