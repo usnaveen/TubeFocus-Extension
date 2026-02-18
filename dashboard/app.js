@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Load all panels
+    checkBackendStatus();
     loadStatsPanel();
     loadSavedVideos();
     loadRecentSessions();
@@ -67,8 +68,7 @@ async function loadStatsPanel() {
         const data = await res.json();
         const videos = data.videos || [];
 
-        document.getElementById('saved-count').textContent = videos.length;
-        document.getElementById('header-stats').textContent = `${videos.length} saved videos`;
+        updateSavedVideoStats(videos.length);
 
         // Try to load session stats
         const sessRes = await fetch(`${API_BASE_URL}/firestore/sessions?limit=7`, { headers: getHeaders() });
@@ -194,16 +194,18 @@ async function loadSavedVideos() {
 
         if (!savedVideosCache.length) {
             badge.textContent = '0';
+            updateSavedVideoStats(0);
             list.innerHTML = '<div class="empty-state">No saved videos yet. Use the extension to save videos!</div>';
             return;
         }
 
         badge.textContent = `${savedVideosCache.length}`;
+        updateSavedVideoStats(savedVideosCache.length);
         list.innerHTML = savedVideosCache.map((v, i) => `
       <div class="video-item"
            draggable="true"
            data-idx="${i}"
-           onclick="window.open('https://youtube.com/watch?v=${esc(v.video_id)}','_blank')">
+           onclick="window.open('${esc(getWatchUrl(v))}','_blank')">
         <div class="video-title">${esc(v.title || v.video_id)}</div>
         <div class="video-meta">
           <span class="save-mode-badge">
@@ -453,16 +455,20 @@ function appendMessageWithSources(type, text, sources) {
             let html = `<div class="source-title">${esc(source.title || 'Video')}</div>`;
 
             // YouTube embed
-            if (source.embed_url) {
+            const embedUrl = normalizeEmbedUrl(source.embed_url, source.video_id);
+            if (embedUrl) {
                 html += `<iframe class="source-embed"
-          src="${esc(source.embed_url)}"
+          src="${esc(embedUrl)}"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowfullscreen></iframe>`;
             } else if (source.video_id) {
-                html += `<iframe class="source-embed"
-          src="https://www.youtube.com/embed/${esc(source.video_id)}"
+                const fallbackId = extractYoutubeId(source.video_id);
+                if (fallbackId) {
+                    html += `<iframe class="source-embed"
+          src="https://www.youtube.com/embed/${esc(fallbackId)}"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowfullscreen></iframe>`;
+                }
             }
 
             // Summary
@@ -504,10 +510,12 @@ function appendMessageWithSources(type, text, sources) {
 
 function jumpToTimestamp(videoId, timestamp) {
     // Find the iframe for this video and update its src with timestamp
+    const normalizedId = extractYoutubeId(videoId);
+    if (!normalizedId) return;
     const iframes = document.querySelectorAll('.source-embed');
     iframes.forEach(iframe => {
-        if (iframe.src.includes(videoId)) {
-            iframe.src = `https://www.youtube.com/embed/${videoId}?start=${timestamp}&autoplay=1`;
+        if (iframe.src.includes(normalizedId)) {
+            iframe.src = `https://www.youtube.com/embed/${normalizedId}?start=${timestamp}&autoplay=1`;
         }
     });
 }
@@ -515,6 +523,67 @@ function jumpToTimestamp(videoId, timestamp) {
 // ========================================================
 //  Helpers
 // ========================================================
+async function checkBackendStatus() {
+    const statusEl = document.getElementById('backend-status');
+    if (!statusEl) return;
+    setBackendStatus(statusEl, 'connecting');
+    try {
+        const res = await fetch(`${API_BASE_URL}/health`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        setBackendStatus(statusEl, 'online');
+    } catch (e) {
+        console.warn('Backend health check failed:', e);
+        setBackendStatus(statusEl, 'offline');
+    }
+}
+
+function setBackendStatus(el, state) {
+    el.classList.remove('online', 'offline');
+    const label = el.querySelector('.status-text');
+    if (state === 'online') {
+        el.classList.add('online');
+        if (label) label.textContent = 'Backend connected';
+        return;
+    }
+    if (state === 'offline') {
+        el.classList.add('offline');
+        if (label) label.textContent = 'Backend offline';
+        return;
+    }
+    if (label) label.textContent = 'Connecting';
+}
+
+function updateSavedVideoStats(count) {
+    const headerStats = document.getElementById('header-stats');
+    const savedCount = document.getElementById('saved-count');
+    if (savedCount) savedCount.textContent = count;
+    if (headerStats) headerStats.textContent = `${count} saved videos`;
+}
+
+function extractYoutubeId(value) {
+    const raw = (value || '').trim();
+    if (!raw) return '';
+    if (raw.includes('youtube.com') || raw.includes('youtu.be')) {
+        const match = raw.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/);
+        if (match) return match[1];
+    }
+    return raw.length === 11 ? raw : '';
+}
+
+function normalizeEmbedUrl(embedUrl, videoId) {
+    const id = extractYoutubeId(embedUrl || '') || extractYoutubeId(videoId || '');
+    if (!id) return '';
+    return `https://www.youtube.com/embed/${id}`;
+}
+
+function getWatchUrl(video) {
+    if (!video) return '#';
+    if (video.video_url) return video.video_url;
+    const id = extractYoutubeId(video.video_id || '');
+    if (!id) return '#';
+    return `https://youtube.com/watch?v=${id}`;
+}
+
 function formatTime(seconds) {
     const s = Math.floor(seconds);
     const mins = Math.floor(s / 60);
