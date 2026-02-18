@@ -508,29 +508,26 @@ async function scrapeTranscriptFromYouTube() {
     transcriptButton.click();
     console.log('[Transcript] Clicked show transcript button');
 
-    // Step 2: Wait for transcript panel to load
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    // Step 3: Find transcript panel and extract text
-    const transcriptPanel = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]');
-
-    if (!transcriptPanel) {
-      console.warn('[Transcript] Transcript panel not found after clicking button');
-      return {
-        success: false,
-        error: 'Transcript panel did not load. Please try again.',
-        transcript: null
-      };
+    // Step 2: Wait for transcript panel to load with retries
+    console.log('[Transcript] Waiting for segments to load...');
+    let segments = [];
+    for (let i = 0; i < 10; i++) { // Try for 5 seconds (10 x 500ms)
+      const transcriptPanel = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]');
+      if (transcriptPanel) {
+        segments = transcriptPanel.querySelectorAll('ytd-transcript-segment-renderer');
+        if (segments.length > 0) {
+          console.log(`[Transcript] Found ${segments.length} segments after ${i * 0.5}s`);
+          break;
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    // Extract transcript segments
-    const segments = transcriptPanel.querySelectorAll('ytd-transcript-segment-renderer');
-
     if (segments.length === 0) {
-      console.warn('[Transcript] No transcript segments found in panel');
+      console.warn('[Transcript] No transcript segments found in panel after waiting');
       return {
         success: false,
-        error: 'Transcript panel is empty.',
+        error: 'Transcript panel is empty or took too long to load. Please make sure the transcript is visible.',
         transcript: null
       };
     }
