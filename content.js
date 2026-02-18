@@ -6,6 +6,7 @@ let sessionActive = false;
 let userGoal = '';
 let lastVideoId = null;
 let currentScore = null;
+let currentIntentLabel = 'Video';
 let lastFlashTime = 0;
 let scoreDisplay = null;
 
@@ -85,6 +86,7 @@ function updateScoreDisplay(state, data = {}) {
         color = `rgb(${r}, ${g}, ${b})`;
       }
       borderColor = color;
+      currentIntentLabel = (data.category || currentIntentLabel || 'Video').toString();
       html = `
         <div style="font-size: 16px; margin-bottom: 2px;">${percentage}%</div>
         <div style="font-size: 10px; opacity: 0.7;">${data.category || 'Video'}</div>
@@ -2203,6 +2205,8 @@ function renderChapters(chapters, source) {
 
 const recommendationDecisionCache = new Map();
 const filteredRecommendationRuntimeSet = new Set();
+let filteredRecentVideosCache = [];
+let filteredRecentVideosLoaded = false;
 let gatekeeperObserver = null;
 let scanTimeout = null;
 const RECOMMENDATION_SELECTORS = [
@@ -2442,44 +2446,213 @@ function updateFilterStatusBadge() {
     document.querySelector('#secondary-inner') ||
     document.querySelector('#secondary') ||
     document.querySelector('ytd-watch-flexy #secondary');
-  const useFloatingHost = !host;
   const targetHost = host || document.body;
 
   const hiddenCount = document.querySelectorAll('.tubefocus-filter-hidden').length;
   const scorePct = Number.isFinite(currentScore)
     ? (currentScore > 1 ? Math.round(currentScore) : Math.round(currentScore * 100))
     : null;
+  const rawIntent = (currentIntentLabel || 'Video').replace(/\s+/g, ' ').trim();
+  const shortIntent = rawIntent.length > 20 ? `${rawIntent.slice(0, 20)}...` : rawIntent;
   let badge = existing;
   if (!badge) {
     badge = document.createElement('div');
     badge.id = 'tubefocus-filter-status';
     badge.style.cssText = `
       margin: 8px 0 10px;
-      padding: 8px 12px;
-      border-radius: 8px;
-      background: rgba(42, 168, 82, 0.18);
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.62);
       color: var(--yt-spec-text-primary, #fff);
-      border: 1px solid rgba(42, 168, 82, 0.45);
-      font-size: 12px;
+      border: 1px solid rgba(253, 240, 213, 0.34);
+      font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.2px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      position: fixed;
+      bottom: 62px;
+      left: 20px;
+      z-index: 10040;
+      max-width: 420px;
+      white-space: nowrap;
+      cursor: default;
     `;
-    if (useFloatingHost) {
-      badge.style.position = 'fixed';
-      badge.style.bottom = '62px';
-      badge.style.left = '20px';
-      badge.style.zIndex = '10040';
-      targetHost.appendChild(badge);
-    } else {
-      badge.style.position = 'fixed';
-      badge.style.bottom = '62px';
-      badge.style.left = '20px';
-      badge.style.zIndex = '10040';
-      targetHost.appendChild(badge);
-    }
+
+    const main = document.createElement('span');
+    main.className = 'tubefocus-filter-main';
+    main.style.cssText = `
+      overflow: hidden;
+      text-overflow: ellipsis;
+    `;
+    badge.appendChild(main);
+
+    const count = document.createElement('span');
+    count.className = 'tubefocus-filter-count';
+    count.style.cssText = `
+      color: #fdf0d5;
+      font-family: 'Roboto Mono', monospace;
+      font-weight: 700;
+      cursor: pointer;
+    `;
+    badge.appendChild(count);
+
+    const popup = document.createElement('div');
+    popup.className = 'tubefocus-filter-popup';
+    popup.style.cssText = `
+      position: absolute;
+      left: 0;
+      bottom: 34px;
+      width: 360px;
+      max-height: 360px;
+      overflow-y: auto;
+      background: rgba(20, 3, 5, 0.96);
+      border: 1px solid rgba(253, 240, 213, 0.3);
+      border-radius: 10px;
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
+      padding: 8px;
+      display: none;
+    `;
+    badge.appendChild(popup);
+
+    badge.addEventListener('mouseenter', () => {
+      renderFilteredPopupContent(popup);
+      popup.style.display = 'block';
+    });
+    badge.addEventListener('mouseleave', () => {
+      popup.style.display = 'none';
+    });
+
+    targetHost.appendChild(badge);
   }
 
-  badge.textContent = `TubeFocus filter: ${hiddenCount} hidden${scorePct !== null ? ` | Score: ${scorePct}%` : ''}`;
+  const mainNode = badge.querySelector('.tubefocus-filter-main');
+  const countNode = badge.querySelector('.tubefocus-filter-count');
+  if (mainNode) {
+    const scoreLabel = scorePct !== null ? `${scorePct}%` : '--%';
+    mainNode.textContent = `${scoreLabel} ${shortIntent}`;
+  }
+  if (countNode) {
+    countNode.textContent = `| ${hiddenCount}`;
+  }
+
+  ensureFilteredRecentVideosCacheLoaded();
+}
+
+function ensureFilteredRecentVideosCacheLoaded() {
+  if (filteredRecentVideosLoaded) return;
+  chrome.storage.local.get(['filteredVideosRemovedRecent'], (data) => {
+    filteredRecentVideosCache = Array.isArray(data.filteredVideosRemovedRecent)
+      ? data.filteredVideosRemovedRecent
+      : [];
+    filteredRecentVideosLoaded = true;
+    const popup = document.querySelector('#tubefocus-filter-status .tubefocus-filter-popup');
+    if (popup && popup.style.display === 'block') {
+      renderFilteredPopupContent(popup);
+    }
+  });
+}
+
+function formatFilterReasonLabel(reason) {
+  const label = (reason || 'filtered').toString().replace(/_/g, ' ').trim();
+  return label || 'filtered';
+}
+
+function renderFilteredPopupContent(popup) {
+  if (!popup) return;
+  popup.innerHTML = '';
+
+  const title = document.createElement('div');
+  title.textContent = 'Recently filtered videos';
+  title.style.cssText = `
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: rgba(253, 240, 213, 0.75);
+    margin: 2px 4px 8px;
+    font-weight: 700;
+  `;
+  popup.appendChild(title);
+
+  const recent = filteredRecentVideosCache.slice(0, 12);
+  if (!recent.length) {
+    const empty = document.createElement('div');
+    empty.textContent = 'No filtered videos recorded yet.';
+    empty.style.cssText = `
+      color: rgba(253, 240, 213, 0.75);
+      font-size: 12px;
+      padding: 8px 6px;
+    `;
+    popup.appendChild(empty);
+    return;
+  }
+
+  for (const item of recent) {
+    const link = document.createElement('a');
+    link.href = item.url || `https://www.youtube.com/watch?v=${item.video_id || ''}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 7px;
+      margin-bottom: 4px;
+    `;
+    link.addEventListener('mouseenter', () => {
+      link.style.borderColor = 'rgba(253, 240, 213, 0.28)';
+      link.style.background = 'rgba(255, 255, 255, 0.05)';
+    });
+    link.addEventListener('mouseleave', () => {
+      link.style.borderColor = 'transparent';
+      link.style.background = 'transparent';
+    });
+
+    const img = document.createElement('img');
+    img.src = item.thumbnail_url || '';
+    img.alt = 'thumb';
+    img.style.cssText = `
+      width: 90px;
+      height: 50px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: rgba(255, 255, 255, 0.08);
+      flex-shrink: 0;
+    `;
+    link.appendChild(img);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = `min-width: 0; color: #fdf0d5;`;
+
+    const titleLine = document.createElement('div');
+    titleLine.textContent = item.title || item.video_id || 'Removed video';
+    titleLine.style.cssText = `
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    `;
+    meta.appendChild(titleLine);
+
+    const reasonLine = document.createElement('div');
+    reasonLine.textContent = formatFilterReasonLabel(item.reason);
+    reasonLine.style.cssText = `
+      font-size: 10px;
+      color: rgba(253, 240, 213, 0.72);
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    `;
+    meta.appendChild(reasonLine);
+
+    link.appendChild(meta);
+    popup.appendChild(link);
+  }
 }
 
 function buildFilteredVideoPayload(recommendation, decision) {
@@ -2508,9 +2681,11 @@ function recordFilteredRecommendation(recommendation, decision) {
     const total = Number(data.filteredVideosRemovedTotal || 0) + 1;
     const recent = Array.isArray(data.filteredVideosRemovedRecent) ? data.filteredVideosRemovedRecent : [];
     const deduped = [payload, ...recent.filter(item => item.video_id !== payload.video_id)];
+    filteredRecentVideosCache = deduped.slice(0, 40);
+    filteredRecentVideosLoaded = true;
     chrome.storage.local.set({
       filteredVideosRemovedTotal: total,
-      filteredVideosRemovedRecent: deduped.slice(0, 40)
+      filteredVideosRemovedRecent: filteredRecentVideosCache
     });
   });
 }
