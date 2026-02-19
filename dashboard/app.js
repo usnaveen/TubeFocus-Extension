@@ -570,7 +570,7 @@ async function sendMessage() {
 
     try {
         // Local deterministic fallback for inventory-style queries.
-        if (isSavedInventoryQuery(text) && savedVideosCache.length > 0) {
+        if (!contextVideo && isSavedInventoryQuery(text) && savedVideosCache.length > 0) {
             const loadingEl = document.getElementById(loadingId);
             if (loadingEl) loadingEl.remove();
             const local = buildLocalInventoryResponse(text);
@@ -789,8 +789,8 @@ function getSourceThumbnail(source) {
 
 function isSavedInventoryQuery(query) {
     const text = (query || '').toLowerCase();
-    const inventoryTerms = ['do i have', 'how many', 'show', 'list', 'any', 'is there', 'what are'];
-    const libraryTerms = ['saved', 'library', 'videos', 'video'];
+    const inventoryTerms = ['do i have', 'how many', 'show', 'list', 'is there', 'what are', 'which'];
+    const libraryTerms = ['saved', 'library', 'saved videos', 'in my library'];
     return inventoryTerms.some(t => text.includes(t)) && libraryTerms.some(t => text.includes(t));
 }
 
