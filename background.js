@@ -350,7 +350,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         title: msg.title,
         transcript: msg.transcript,
         goal: msg.goal,
-        score: msg.score
+        score: msg.score,
+        segments: msg.segments || null  // Timestamped segments for hierarchical chunking
       };
 
       fetch(endpoint, {
@@ -524,7 +525,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           score: msg.score,
           video_url: msg.video_url,
           transcript: msg.transcript || '',
-          description: msg.description || ''
+          description: msg.description || '',
+          segments: msg.segments || null
         })
       })
         .then(res => res.json())

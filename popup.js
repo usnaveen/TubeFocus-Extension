@@ -429,12 +429,13 @@ if (saveVideoButton) {
           const goal = prefs.goal || 'General learning';
           const score = prefs.currentScore || 50;
 
-          // Send unified save request.
+          // Send unified save request with segments for hierarchical chunking.
           chrome.runtime.sendMessage({
             type: 'LIBRARIAN_SAVE_ITEM',
             video_id: videoId,
             title: tab.title.replace(' - YouTube', ''),
             transcript: transcript,
+            segments: response?.segments || null,
             description: description,
             video_url: tab.url,
             goal: goal,
