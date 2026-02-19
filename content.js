@@ -9,6 +9,7 @@ let currentScore = null;
 let currentIntentLabel = 'Video';
 let lastFlashTime = 0;
 let scoreDisplay = null;
+let filteredHiddenCount = 0;
 
 // Create the score display component
 function createScoreDisplay() {
@@ -22,16 +23,16 @@ function createScoreDisplay() {
     left: 20px;
     background: rgba(0, 0, 0, 0.4);
     color: white;
-    padding: 8px 12px;
-    border-radius: 6px;
+    padding: 6px 10px;
+    border-radius: 5px;
     font-family: 'Roboto', sans-serif;
-    font-size: 12px;
+    font-size: 10px;
     font-weight: bold;
     z-index: 10000;
     transition: all 0.3s ease;
     backdrop-filter: blur(5px);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    min-width: 60px;
+    min-width: 48px;
     text-align: center;
     opacity: 0;
     transform: translateY(10px);
@@ -52,7 +53,7 @@ function updateScoreDisplay(state, data = {}) {
 
   switch (state) {
     case 'loading':
-      html = `<div style="font-size: 12px; opacity: 0.8;">Calculating...</div>`;
+      html = `<div style="font-size: 10px; opacity: 0.8;">Calculating...</div>`;
       color = '#ccc';
       borderColor = '#888';
       break;
@@ -87,9 +88,14 @@ function updateScoreDisplay(state, data = {}) {
       }
       borderColor = color;
       currentIntentLabel = (data.category || currentIntentLabel || 'Video').toString();
+      const compactIntent = currentIntentLabel.length > 18 ? `${currentIntentLabel.slice(0, 18)}...` : currentIntentLabel;
       html = `
-        <div style="font-size: 16px; margin-bottom: 2px;">${percentage}%</div>
-        <div style="font-size: 10px; opacity: 0.7;">${data.category || 'Video'}</div>
+        <div style="display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap;">
+          <span style="font-size:13px; font-weight:800;">${percentage}%</span>
+          <span style="font-size:10px; opacity:0.78; max-width:140px; overflow:hidden; text-overflow:ellipsis;">${compactIntent}</span>
+          <span style="font-size:16px; line-height:1; opacity:0.9;">|</span>
+          <span style="font-size:12px; font-weight:800;">${filteredHiddenCount}</span>
+        </div>
       `;
       break;
   }
@@ -99,6 +105,7 @@ function updateScoreDisplay(state, data = {}) {
   scoreDisplay.style.borderColor = borderColor;
   scoreDisplay.style.opacity = '1';
   scoreDisplay.style.transform = 'translateY(0)';
+  attachRemovedPopupToScoreDisplay();
 
   // Restore theme-aware styling
   chrome.storage.local.get('selectedTheme', (prefs) => {
@@ -2436,105 +2443,20 @@ function updateFilterStatusBadge() {
   const existing = document.getElementById('tubefocus-filter-status');
   if (!sessionActive) {
     if (existing) existing.remove();
+    filteredHiddenCount = 0;
+    updateRemovedPopupAnchorState();
     return;
   }
 
-  const host =
-    document.querySelector('#secondary-inner') ||
-    document.querySelector('#secondary') ||
-    document.querySelector('ytd-watch-flexy #secondary');
-  const targetHost = host || document.body;
-
   const hiddenCount = document.querySelectorAll('.tubefocus-filter-hidden').length;
-  const scorePct = Number.isFinite(currentScore)
-    ? (currentScore > 1 ? Math.round(currentScore) : Math.round(currentScore * 100))
-    : null;
-  const rawIntent = (currentIntentLabel || 'Video').replace(/\s+/g, ' ').trim();
-  const shortIntent = rawIntent.length > 20 ? `${rawIntent.slice(0, 20)}...` : rawIntent;
-  let badge = existing;
-  if (!badge) {
-    badge = document.createElement('div');
-    badge.id = 'tubefocus-filter-status';
-    badge.style.cssText = `
-      margin: 8px 0 10px;
-      padding: 7px 10px;
-      border-radius: 999px;
-      background: rgba(0, 0, 0, 0.62);
-      color: var(--yt-spec-text-primary, #fff);
-      border: 1px solid rgba(253, 240, 213, 0.34);
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.2px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      position: fixed;
-      bottom: 62px;
-      left: 20px;
-      z-index: 10040;
-      max-width: 420px;
-      white-space: nowrap;
-      cursor: default;
-    `;
-
-    const main = document.createElement('span');
-    main.className = 'tubefocus-filter-main';
-    main.style.cssText = `
-      overflow: hidden;
-      text-overflow: ellipsis;
-    `;
-    badge.appendChild(main);
-
-    const count = document.createElement('span');
-    count.className = 'tubefocus-filter-count';
-    count.style.cssText = `
-      color: #fdf0d5;
-      font-family: 'Roboto Mono', monospace;
-      font-weight: 700;
-      cursor: pointer;
-    `;
-    badge.appendChild(count);
-
-    const popup = document.createElement('div');
-    popup.className = 'tubefocus-filter-popup';
-    popup.style.cssText = `
-      position: absolute;
-      left: 0;
-      bottom: 34px;
-      width: 360px;
-      max-height: 360px;
-      overflow-y: auto;
-      background: rgba(20, 3, 5, 0.96);
-      border: 1px solid rgba(253, 240, 213, 0.3);
-      border-radius: 10px;
-      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
-      padding: 8px;
-      display: none;
-    `;
-    badge.appendChild(popup);
-
-    badge.addEventListener('mouseenter', () => {
-      renderFilteredPopupContent(popup);
-      popup.style.display = 'block';
-    });
-    badge.addEventListener('mouseleave', () => {
-      popup.style.display = 'none';
-    });
-
-    targetHost.appendChild(badge);
-  }
-
-  const mainNode = badge.querySelector('.tubefocus-filter-main');
-  const countNode = badge.querySelector('.tubefocus-filter-count');
-  if (mainNode) {
-    const scoreLabel = scorePct !== null ? `${scorePct}%` : '--%';
-    mainNode.textContent = `${scoreLabel} ${shortIntent}`;
-  }
-  if (countNode) {
-    countNode.textContent = `| ${hiddenCount}`;
-  }
+  filteredHiddenCount = hiddenCount;
+  if (existing) existing.remove();
 
   ensureFilteredRecentVideosCacheLoaded();
+  if (Number.isFinite(currentScore) && scoreDisplay) {
+    updateScoreDisplay('success', { score: currentScore, category: currentIntentLabel });
+  }
+  updateRemovedPopupAnchorState();
 }
 
 function ensureFilteredRecentVideosCacheLoaded() {
@@ -2544,7 +2466,7 @@ function ensureFilteredRecentVideosCacheLoaded() {
       ? data.filteredVideosRemovedRecent
       : [];
     filteredRecentVideosLoaded = true;
-    const popup = document.querySelector('#tubefocus-filter-status .tubefocus-filter-popup');
+    const popup = scoreDisplay ? scoreDisplay.querySelector('.tubefocus-filter-popup') : null;
     if (popup && popup.style.display === 'block') {
       renderFilteredPopupContent(popup);
     }
@@ -2650,6 +2572,48 @@ function renderFilteredPopupContent(popup) {
     link.appendChild(meta);
     popup.appendChild(link);
   }
+}
+
+function attachRemovedPopupToScoreDisplay() {
+  if (!scoreDisplay) return;
+  if (scoreDisplay.dataset.popupBound === '1') return;
+  scoreDisplay.dataset.popupBound = '1';
+  scoreDisplay.style.position = 'fixed';
+  scoreDisplay.style.overflow = 'visible';
+
+  const popup = document.createElement('div');
+  popup.className = 'tubefocus-filter-popup';
+  popup.style.cssText = `
+    position: absolute;
+    left: 0;
+    bottom: 34px;
+    width: 360px;
+    max-height: 360px;
+    overflow-y: auto;
+    background: rgba(20, 3, 5, 0.96);
+    border: 1px solid rgba(253, 240, 213, 0.3);
+    border-radius: 10px;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
+    padding: 8px;
+    display: none;
+    text-align: left;
+    z-index: 10001;
+  `;
+  scoreDisplay.appendChild(popup);
+
+  scoreDisplay.addEventListener('mouseenter', () => {
+    if (!sessionActive) return;
+    renderFilteredPopupContent(popup);
+    popup.style.display = 'block';
+  });
+  scoreDisplay.addEventListener('mouseleave', () => {
+    popup.style.display = 'none';
+  });
+}
+
+function updateRemovedPopupAnchorState() {
+  if (!scoreDisplay) return;
+  attachRemovedPopupToScoreDisplay();
 }
 
 function buildFilteredVideoPayload(recommendation, decision) {
