@@ -15,6 +15,8 @@ function getHeaders() {
 
 // ---------- State ----------
 let contextVideo = null;   // Dragged video for focused-mode chat
+let attachedHighlight = null; // Highlight attached to next chat message
+let chatHistory = [];      // Conversation history for multi-turn chat
 let dashChart = null;      // Chart.js instance
 let savedVideosCache = []; // Cache for drag source
 let highlightsCache = [];  // Cache for fallback lists/stats
@@ -343,17 +345,29 @@ async function loadHighlights() {
         }
 
         list.innerHTML = highlights.map((h, idx) => `
-      <div class="highlight-item" draggable="true" data-hidx="${idx}" onclick="window.open('${esc(getHighlightWatchUrl(h))}','_blank')">
+      <div class="highlight-item" draggable="true" data-hidx="${idx}">
         <div class="highlight-meta">
-          <span class="highlight-timestamp">${esc(h.range_label || formatTime(h.timestamp || 0))}</span>
+          <span class="highlight-timestamp" onclick="window.open('${esc(getHighlightWatchUrl(h))}','_blank')">${esc(h.range_label || formatTime(h.timestamp || 0))}</span>
           <span class="highlight-video-name">${esc(h.video_title || h.video_id || '')}</span>
+          <button class="highlight-ask-btn" data-hidx="${idx}" title="Ask about this highlight">Ask AI</button>
         </div>
-        <div class="highlight-text">"${esc(h.note || h.text || h.transcript || 'Highlight saved')}"</div>
+        <div class="highlight-text" onclick="window.open('${esc(getHighlightWatchUrl(h))}','_blank')">"${esc(h.note || h.text || h.transcript || 'Highlight saved')}"</div>
         ${h.note && h.transcript ? `<div class="highlight-note">${esc(h.transcript.slice(0, 180))}${h.transcript.length > 180 ? '...' : ''}</div>` : ''}
       </div>
     `).join('');
 
-        // Drag start/end on highlight items for focused chat context.
+        // "Ask about this" button on highlight cards
+        list.querySelectorAll('.highlight-ask-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                const idx = Number(btn.dataset.hidx);
+                const h = highlightsCache[idx];
+                if (!h) return;
+                attachHighlightToChat(h);
+            });
+        });
+
+        // Drag start/end on highlight items — sends FULL highlight data for chat context.
         list.querySelectorAll('.highlight-item').forEach(el => {
             el.addEventListener('dragstart', e => {
                 const idx = Number(el.dataset.hidx || -1);
@@ -361,7 +375,11 @@ async function loadHighlights() {
                 if (!h || !h.video_id) return;
                 const payload = {
                     video_id: h.video_id,
+                    video_title: h.video_title || `Video ${h.video_id}`,
                     title: h.video_title || `Video ${h.video_id}`,
+                    range_label: h.range_label || '',
+                    note: h.note || '',
+                    transcript: h.transcript || '',
                     description: h.note || h.transcript || '',
                     from: 'highlight'
                 };
@@ -524,11 +542,17 @@ function setupChat() {
         e.preventDefault();
         dropZone.classList.remove('drag-target');
         try {
-            const video = JSON.parse(e.dataTransfer.getData('application/json'));
-            if (video && video.video_id) {
-                setContextVideo(video);
-                input.value = `Tell me about "${video.title}" and its key highlights.`;
-                input.focus();
+            const payload = JSON.parse(e.dataTransfer.getData('application/json'));
+            if (payload && payload.video_id) {
+                if (payload.from === 'highlight') {
+                    // Dropped a highlight — attach it with full context
+                    attachHighlightToChat(payload);
+                } else {
+                    // Dropped a video
+                    setContextVideo(payload);
+                    input.value = `Tell me about "${payload.title}" and its key highlights.`;
+                    input.focus();
+                }
             }
         } catch (err) { console.error('Drop parse error:', err); }
     });
@@ -539,6 +563,7 @@ function setupChat() {
 
 function setContextVideo(video) {
     contextVideo = video;
+    attachedHighlight = null; // Clear any attached highlight when setting video context
     const chip = document.getElementById('chat-context-chip');
     const label = document.getElementById('chat-context-label');
     const badge = document.getElementById('focus-badge');
@@ -547,8 +572,39 @@ function setContextVideo(video) {
     badge.style.display = 'inline-flex';
 }
 
+function attachHighlightToChat(highlight) {
+    const videoContext = {
+        video_id: highlight.video_id,
+        title: highlight.video_title || `Video ${highlight.video_id}`
+    };
+    setContextVideo(videoContext);
+
+    attachedHighlight = {
+        video_id: highlight.video_id,
+        video_title: highlight.video_title || '',
+        range_label: highlight.range_label || '',
+        note: highlight.note || '',
+        transcript: highlight.transcript || ''
+    };
+
+    // Update chip to show highlight info
+    const label = document.getElementById('chat-context-label');
+    const rangeInfo = highlight.range_label ? ` [${highlight.range_label}]` : '';
+    label.innerHTML = `Highlight: <strong>${esc(highlight.video_title || 'Video')}${rangeInfo}</strong>`;
+
+    // Pre-populate chat input
+    const input = document.getElementById('chat-input');
+    const rangeText = highlight.range_label ? ` at ${highlight.range_label}` : '';
+    input.value = `Tell me about my highlight${rangeText} on "${highlight.video_title || 'this video'}"`;
+    input.focus();
+
+    // Scroll to chat
+    document.getElementById('chat-drop-zone').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 function clearContext() {
     contextVideo = null;
+    attachedHighlight = null;
     document.getElementById('chat-context-chip').classList.remove('active');
     document.getElementById('focus-badge').style.display = 'none';
 }
@@ -564,6 +620,13 @@ async function sendMessage() {
     appendMessage('user', text);
     input.value = '';
 
+    // Track user message in chat history
+    chatHistory.push({ role: 'user', content: text });
+
+    // Capture and clear attached highlight (used once per message)
+    const currentAttachedHighlight = attachedHighlight;
+    attachedHighlight = null;
+
     // Loading
     const loadingId = 'loading-' + Date.now();
     appendMessage('bot', 'Searching knowledge base...', loadingId, true);
@@ -571,6 +634,16 @@ async function sendMessage() {
     try {
         const body = { query: text };
         if (contextVideo) body.focus_video_id = contextVideo.video_id;
+
+        // Send conversation history (last 6 messages for context)
+        if (chatHistory.length > 1) {
+            body.chat_history = chatHistory.slice(-7, -1); // Exclude the current message (already in query)
+        }
+
+        // Send attached highlight if present
+        if (currentAttachedHighlight) {
+            body.attached_highlight = currentAttachedHighlight;
+        }
 
         const res = await fetch(`${API_BASE_URL}/librarian/chat`, {
             method: 'POST',
@@ -592,6 +665,14 @@ async function sendMessage() {
         const sources = payload.sources || [];
         appendMessageWithSources('bot', answerText, sources, payload.meta || null);
 
+        // Track assistant response in chat history
+        chatHistory.push({ role: 'assistant', content: answerText });
+
+        // Keep chat history bounded (last 10 messages)
+        if (chatHistory.length > 10) {
+            chatHistory = chatHistory.slice(-10);
+        }
+
     } catch (e) {
         console.error('Chat error:', e);
         const loadingEl = document.getElementById(loadingId);
@@ -608,7 +689,14 @@ function appendMessage(type, text, id, isLoading) {
     const div = document.createElement('div');
     div.className = `message ${type}${isLoading ? ' loading' : ''}`;
     if (id) div.id = id;
-    div.textContent = text;
+
+    // Parse Markdown for bot messages, plain text for user/loading
+    if (type === 'bot' && !isLoading) {
+        div.innerHTML = parseSimpleMarkdown(text);
+    } else {
+        div.textContent = text;
+    }
+
     history.appendChild(div);
     history.scrollTop = history.scrollHeight;
 }
@@ -617,10 +705,10 @@ function appendMessageWithSources(type, text, sources, meta = null) {
     const history = document.getElementById('chat-history');
     const wrapper = document.createElement('div');
 
-    // Message bubble
+    // Message bubble with Markdown
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${type}`;
-    msgDiv.textContent = text;
+    msgDiv.innerHTML = parseSimpleMarkdown(text);
     wrapper.appendChild(msgDiv);
 
     if (meta && type === 'bot') {
@@ -639,6 +727,25 @@ function appendMessageWithSources(type, text, sources, meta = null) {
         cardsDiv.className = 'source-cards';
 
         sources.forEach(source => {
+            // SKIP rendering the card if it matches the current focused video
+            // (The user already sees the big player/focus card for this video)
+            if (meta && meta.focus_video_id) {
+                const srcId = extractYoutubeId(source.video_id);
+                const focusId = extractYoutubeId(meta.focus_video_id);
+                if (srcId && focusId && srcId === focusId) {
+                    return;
+                }
+            }
+
+            // Also skip if it matches the manually set context contextVideo context
+            if (contextVideo && contextVideo.video_id) {
+                const srcId = extractYoutubeId(source.video_id);
+                const ctxId = extractYoutubeId(contextVideo.video_id);
+                if (srcId && ctxId && srcId === ctxId) {
+                    return;
+                }
+            }
+
             const card = document.createElement('div');
             card.className = 'source-card';
 
@@ -696,11 +803,47 @@ function appendMessageWithSources(type, text, sources, meta = null) {
             cardsDiv.appendChild(card);
         });
 
-        wrapper.appendChild(cardsDiv);
+        // Only append wrapper if we actually added cards (didn't skip all of them)
+        if (cardsDiv.children.length > 0) {
+            wrapper.appendChild(cardsDiv);
+        }
     }
 
     history.appendChild(wrapper);
     history.scrollTop = history.scrollHeight;
+}
+
+function parseSimpleMarkdown(text) {
+    if (!text) return '';
+
+    // Escape HTML first to prevent XSS
+    let html = text.replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    // Bold (**text**)
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+    // Italic (*text*)
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+    // Headers (### text)
+    html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
+
+    // Lists (- item)
+    // We wrap lists in <ul> if we find consecutive lines starting with -
+    // Simple approach: just replace "- " with a bullet point char or styled span
+    // Better approach: convert to proper <ul> but regex is tricky. 
+    // Let's go with a simple clean replacement for now:
+    html = html.replace(/^- (.*$)/gm, '• $1');
+
+    // Newlines to <br>
+    html = html.replace(/\n/g, '<br>');
+
+    return html;
 }
 
 function jumpToTimestamp(videoId, timestamp) {
