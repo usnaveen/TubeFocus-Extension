@@ -174,11 +174,12 @@ async function loadSavedVideos() {
         const res = await fetch(`${API_BASE_URL}/librarian/saved_videos`, { headers: getHeaders() });
         const data = await res.json();
         const videos = data.videos || [];
-        savedVideosCache = videos;
+        const localSaved = await getLocalSavedVideosCache();
+        savedVideosCache = mergeSavedVideos(videos, localSaved);
 
-        badge.textContent = videos.length;
+        badge.textContent = savedVideosCache.length;
 
-        if (!videos.length && highlightsCache.length > 0) {
+        if (!savedVideosCache.length && highlightsCache.length > 0) {
             // Fallback: build a pseudo saved list from highlights so drag-to-chat still works.
             const byVideo = new Map();
             highlightsCache.forEach(h => {
@@ -231,8 +232,50 @@ async function loadSavedVideos() {
         });
     } catch (e) {
         console.warn('Saved videos load failed:', e);
+        const localSaved = await getLocalSavedVideosCache();
+        if (localSaved.length) {
+            savedVideosCache = localSaved;
+            badge.textContent = `${savedVideosCache.length}`;
+            updateSavedVideoStats(savedVideosCache.length);
+            list.innerHTML = savedVideosCache.map((v, i) => `
+      <div class="video-item"
+           draggable="true"
+           data-idx="${i}"
+           onclick="window.open('${esc(getWatchUrl(v))}','_blank')">
+        <div class="video-title">${esc(v.title || v.video_id)}</div>
+        <div class="video-meta">
+          <span class="save-mode-badge">✦ Local cache</span>
+          ${v.description ? `<span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.description)}</span>` : ''}
+        </div>
+      </div>
+    `).join('');
+            return;
+        }
         list.innerHTML = '<div class="empty-state">Could not load saved videos.</div>';
     }
+}
+
+async function getLocalSavedVideosCache() {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return [];
+    try {
+        const data = await chrome.storage.local.get(['localSavedVideos']);
+        return Array.isArray(data.localSavedVideos) ? data.localSavedVideos : [];
+    } catch (_e) {
+        return [];
+    }
+}
+
+function mergeSavedVideos(primary, secondary) {
+    const byVideo = new Map();
+    (primary || []).forEach((v) => {
+        if (!v?.video_id) return;
+        byVideo.set(v.video_id, v);
+    });
+    (secondary || []).forEach((v) => {
+        if (!v?.video_id || byVideo.has(v.video_id)) return;
+        byVideo.set(v.video_id, v);
+    });
+    return Array.from(byVideo.values());
 }
 
 // ========================================================
@@ -526,6 +569,16 @@ async function sendMessage() {
     appendMessage('bot', 'Searching knowledge base...', loadingId, true);
 
     try {
+        // Local deterministic fallback for inventory-style queries.
+        if (isSavedInventoryQuery(text) && savedVideosCache.length > 0) {
+            const loadingEl = document.getElementById(loadingId);
+            if (loadingEl) loadingEl.remove();
+            const local = buildLocalInventoryResponse(text);
+            appendMessageWithSources('bot', local.answer, local.sources);
+            history.scrollTop = history.scrollHeight;
+            return;
+        }
+
         const body = { query: text };
         if (contextVideo) body.focus_video_id = contextVideo.video_id;
 
@@ -545,8 +598,17 @@ async function sendMessage() {
 
         // Bot answer
         const payload = data.response || data || {};
-        const answerText = payload.answer || 'I could not find relevant information.';
-        const sources = payload.sources || [];
+        let answerText = payload.answer || 'I could not find relevant information.';
+        let sources = payload.sources || [];
+
+        // If backend claims empty inventory but dashboard already has videos, answer locally.
+        const backendEmptyInventory = /do not have any saved videos|could not find matching saved videos/i.test(answerText.toLowerCase());
+        if (backendEmptyInventory && savedVideosCache.length > 0) {
+            const local = buildLocalInventoryResponse(text);
+            answerText = local.answer;
+            sources = local.sources;
+        }
+
         appendMessageWithSources('bot', answerText, sources);
 
     } catch (e) {
@@ -591,20 +653,25 @@ function appendMessageWithSources(type, text, sources) {
 
             let html = `<div class="source-title">${esc(source.title || 'Video')}</div>`;
 
-            // YouTube embed
+            const inExtensionPage = window.location.protocol === 'chrome-extension:';
+
+            // YouTube preview: avoid iframe embeds in extension pages due Error 153.
             const embedUrl = normalizeEmbedUrl(source.embed_url, source.video_id);
-            if (embedUrl) {
+            if (!inExtensionPage && embedUrl) {
                 html += `<iframe class="source-embed"
           src="${esc(embedUrl)}"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowfullscreen></iframe>`;
             } else if (source.video_id) {
-                const fallbackId = extractYoutubeId(source.video_id);
-                if (fallbackId) {
-                    html += `<iframe class="source-embed"
-          src="https://www.youtube.com/embed/${esc(fallbackId)}"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowfullscreen></iframe>`;
+                const thumb = getSourceThumbnail(source);
+                const watchUrl = source.video_url || getWatchUrl(source);
+                if (thumb) {
+                    html += `<a href="${esc(watchUrl)}" target="_blank" rel="noopener noreferrer" style="display:block;position:relative;margin-bottom:10px;">
+            <img src="${esc(thumb)}" alt="thumbnail" style="width:100%;height:200px;object-fit:cover;border-radius:8px;background:#000;">
+            <span style="position:absolute;right:10px;bottom:10px;background:rgba(0,0,0,0.7);color:#fff;padding:6px 10px;border-radius:999px;font-size:12px;">Open on YouTube</span>
+          </a>`;
+                } else {
+                    html += `<a href="${esc(watchUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-bottom:10px;font-size:12px;">Open on YouTube</a>`;
                 }
             }
 
@@ -711,6 +778,44 @@ function normalizeEmbedUrl(embedUrl, videoId) {
     const id = extractYoutubeId(embedUrl || '') || extractYoutubeId(videoId || '');
     if (!id) return '';
     return `https://www.youtube.com/embed/${id}`;
+}
+
+function getSourceThumbnail(source) {
+    if (source?.thumbnail_url) return source.thumbnail_url;
+    const id = extractYoutubeId(source?.video_id || source?.video_url || source?.embed_url || '');
+    if (!id) return '';
+    return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+}
+
+function isSavedInventoryQuery(query) {
+    const text = (query || '').toLowerCase();
+    const inventoryTerms = ['do i have', 'how many', 'show', 'list', 'any', 'is there', 'what are'];
+    const libraryTerms = ['saved', 'library', 'videos', 'video'];
+    return inventoryTerms.some(t => text.includes(t)) && libraryTerms.some(t => text.includes(t));
+}
+
+function buildLocalInventoryResponse(query) {
+    const text = (query || '').toLowerCase();
+    const rawTokens = text.replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+    const stop = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'have', 'any', 'video', 'videos', 'saved', 'library', 'in', 'my', 'there', 'is', 'are', 'do', 'i', 'by', 'about', 'show', 'list']);
+    const tokens = rawTokens.filter(t => t.length > 2 && !stop.has(t));
+
+    const scored = savedVideosCache.map((v) => {
+        const hay = `${(v.title || '').toLowerCase()} ${(v.description || '').toLowerCase()}`;
+        const score = tokens.length ? tokens.reduce((n, t) => n + (hay.includes(t) ? 1 : 0), 0) : 1;
+        return { score, video: v };
+    }).filter(item => item.score > 0);
+
+    scored.sort((a, b) => b.score - a.score);
+    const matches = scored.length ? scored.map(item => item.video) : savedVideosCache;
+    const top = matches.slice(0, 3);
+
+    const lines = [`Yes. I found ${matches.length} saved video(s) in your library.`];
+    top.forEach((v) => {
+        lines.push(`- ${v.title || v.video_id}`);
+    });
+
+    return { answer: lines.join('\n'), sources: top };
 }
 
 function getWatchUrl(video) {

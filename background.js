@@ -11,6 +11,28 @@ const CONFIG = {
 
 const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;
 
+function cacheLocalSavedVideo(item, saveMode = 'transcript') {
+  if (!item?.video_id) return;
+  chrome.storage.local.get(['localSavedVideos'], (data) => {
+    const existing = Array.isArray(data.localSavedVideos) ? data.localSavedVideos : [];
+    const normalized = {
+      video_id: item.video_id,
+      title: item.title || item.video_id,
+      goal: item.goal || '',
+      score: item.score || null,
+      indexed_at: new Date().toISOString(),
+      save_mode: saveMode,
+      description: item.description || '',
+      video_url: item.video_url || `https://youtube.com/watch?v=${item.video_id}`,
+      embed_url: `https://www.youtube.com/embed/${item.video_id}`,
+      thumbnail_url: `https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`,
+      note: item.description || ''
+    };
+    const deduped = [normalized, ...existing.filter((v) => v.video_id !== normalized.video_id)].slice(0, 80);
+    chrome.storage.local.set({ localSavedVideos: deduped });
+  });
+}
+
 function persistSessionSnapshot(reason = 'manual_stop') {
   chrome.storage.local.get(['sessionStartTime', 'goal', 'watchedScores', 'highlights', 'totalWatchTime'], (state) => {
     try {
@@ -508,6 +530,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         .then(res => res.json())
         .then(data => {
           console.log('[background] Save item result:', data);
+          if (data?.success) {
+            cacheLocalSavedVideo({
+              video_id: msg.video_id,
+              title: msg.title,
+              goal: msg.goal,
+              score: msg.score,
+              video_url: msg.video_url,
+              description: msg.description || ''
+            }, data.save_mode || 'transcript');
+          }
           sendResponse(data);
         })
         .catch(err => {
