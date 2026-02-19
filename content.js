@@ -11,6 +11,72 @@ let lastFlashTime = 0;
 let scoreDisplay = null;
 let filteredHiddenCount = 0;
 
+function hasActiveExtensionContext() {
+  try {
+    return typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
+  } catch (_e) {
+    return false;
+  }
+}
+
+function safeStorageGet(keys, callback) {
+  if (!hasActiveExtensionContext() || !chrome.storage?.local) {
+    callback({});
+    return;
+  }
+  try {
+    chrome.storage.local.get(keys, (data) => {
+      if (chrome.runtime?.lastError) {
+        console.warn('[TubeFocus] storage.get failed:', chrome.runtime.lastError.message);
+        callback({});
+        return;
+      }
+      callback(data || {});
+    });
+  } catch (error) {
+    console.warn('[TubeFocus] storage.get threw:', error?.message || error);
+    callback({});
+  }
+}
+
+function safeStorageSet(values, callback) {
+  if (!hasActiveExtensionContext() || !chrome.storage?.local) {
+    if (callback) callback();
+    return;
+  }
+  try {
+    chrome.storage.local.set(values, () => {
+      if (chrome.runtime?.lastError) {
+        console.warn('[TubeFocus] storage.set failed:', chrome.runtime.lastError.message);
+      }
+      if (callback) callback();
+    });
+  } catch (error) {
+    console.warn('[TubeFocus] storage.set threw:', error?.message || error);
+    if (callback) callback();
+  }
+}
+
+function safeSendMessage(message) {
+  return new Promise((resolve, reject) => {
+    if (!hasActiveExtensionContext()) {
+      reject(new Error('Extension context invalidated. Reload this tab.'));
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime?.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        resolve(response);
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 // Create the score display component
 function createScoreDisplay() {
   if (scoreDisplay) return scoreDisplay;
@@ -107,8 +173,8 @@ function updateScoreDisplay(state, data = {}) {
   scoreDisplay.style.transform = 'translateY(0)';
   attachRemovedPopupToScoreDisplay();
 
-  // Restore theme-aware styling
-  chrome.storage.local.get('selectedTheme', (prefs) => {
+  // Restore theme-aware styling with context-safe storage access.
+  safeStorageGet('selectedTheme', (prefs) => {
     const theme = prefs.selectedTheme || 'crimson-vanilla';
     const themeColors = {
       'cocoa-lemon': { bg: '#774123', text: '#f3e924' },
@@ -221,14 +287,10 @@ function showErrorOverlay(msg) {
 
 // ask background.js to score
 function fetchScore(url, goal) {
-  return new Promise((res, rej) => {
-    const message = { type: 'FETCH_SCORE', url, goal };
-
-    chrome.runtime.sendMessage(message, r => {
-      if (chrome.runtime.lastError) return rej(new Error(chrome.runtime.lastError.message));
-      if (r.error) return rej(new Error(r.error));
-      res(r); // Return full response object
-    });
+  const message = { type: 'FETCH_SCORE', url, goal };
+  return safeSendMessage(message).then((r) => {
+    if (r?.error) throw new Error(r.error);
+    return r;
   });
 }
 
@@ -285,7 +347,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // hydrate state on load
-chrome.storage.local.get(
+safeStorageGet(
   ['sessionActive', 'goal', 'lastVideoId', 'currentScore', 'selectedTheme', 'coachEnabled'],
   prefs => {
     sessionActive = !!prefs.sessionActive;
@@ -301,7 +363,7 @@ chrome.storage.local.get(
     const m = location.href.match(/[?&]v=([^&]+)/);
     if (sessionActive && m && m[1] === lastVideoId && currentScore != null) {
       applyColor(currentScore);
-      chrome.runtime.sendMessage({ type: 'NEW_SCORE', score: currentScore });
+      safeSendMessage({ type: 'NEW_SCORE', score: currentScore }).catch(() => { });
     }
   }
 );
@@ -382,7 +444,7 @@ async function tryScore() {
   }
   updateScoreDisplay('loading');
 
-  chrome.storage.local.get(['goal'], prefs => {
+  safeStorageGet(['goal'], prefs => {
     const goal = prefs.goal || userGoal;
 
     // Always use simple scoring with title and description
@@ -424,12 +486,12 @@ async function tryScore() {
       updateScoreDisplay('success', { score: currentScore, category: category });
       updateFilterStatusBadge();
 
-      chrome.runtime.sendMessage({ type: 'NEW_SCORE', score: currentScore });
+      safeSendMessage({ type: 'NEW_SCORE', score: currentScore }).catch(() => { });
 
-      chrome.storage.local.get('watchedScores', d => {
+      safeStorageGet('watchedScores', d => {
         const arr = d.watchedScores || [];
         arr.push(currentScore);
-        chrome.storage.local.set({ watchedScores: arr, lastVideoId, currentScore });
+        safeStorageSet({ watchedScores: arr, lastVideoId, currentScore });
 
         // Track for Coach Agent
         trackVideoForCoach(vid, title || 'Unknown Video', currentScore);
@@ -463,9 +525,7 @@ async function tryScore() {
       updateScoreDisplay('error', { message: userMsg });
       updateFilterStatusBadge();
       showErrorOverlay(userMsg);
-      chrome.runtime.sendMessage({ type: 'ERROR', error: userMsg }, () => {
-        if (chrome.runtime.lastError) { /* do nothing */ }
-      });
+      safeSendMessage({ type: 'ERROR', error: userMsg }).catch(() => { });
     });
   });
 }
@@ -653,27 +713,24 @@ async function requestCoachAnalysis() {
 
   console.log('[Coach] Requesting analysis with', sessionVideosWatched.length, 'videos');
 
-  chrome.storage.local.get(['goal'], (prefs) => {
+  safeStorageGet(['goal'], (prefs) => {
     const goal = prefs.goal || userGoal;
     if (!goal) return;
     if (!coachSessionId) {
       coachSessionId = `coach_${Date.now()}`;
     }
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: 'COACH_ANALYZE',
       sessionId: coachSessionId,
       goal: goal,
       sessionData: sessionVideosWatched
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('[Coach] Error:', chrome.runtime.lastError);
-        return;
-      }
-
+    }).then((response) => {
       if (response && response.analysis && response.analysis.intervention_needed) {
         showCoachNotification(response.analysis);
       }
+    }).catch((error) => {
+      console.error('[Coach] Error:', error?.message || error);
     });
   });
 }
@@ -811,11 +868,11 @@ function handleCoachAction(action) {
   switch (action) {
     case 'refocus':
       // Clear current session and show popup
-      chrome.runtime.sendMessage({ type: 'SHOW_POPUP' });
+      safeSendMessage({ type: 'SHOW_POPUP' }).catch(() => { });
       break;
     case 'take_break':
       // Pause session temporarily
-      chrome.runtime.sendMessage({ type: 'PAUSE_SESSION' });
+      safeSendMessage({ type: 'PAUSE_SESSION' }).catch(() => { });
       break;
     case 'start_practicing':
       // Suggestion to close YouTube
@@ -854,7 +911,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 // Initialize coach monitoring if session is active
-chrome.storage.local.get(['sessionActive', 'coachEnabled'], (prefs) => {
+safeStorageGet(['sessionActive', 'coachEnabled'], (prefs) => {
   coachEnabled = prefs.coachEnabled !== false;
   if (prefs.sessionActive && coachEnabled) {
     startCoachMonitoring();
@@ -1022,8 +1079,8 @@ async function persistHighlightRange(state, note) {
 
   const rangeLabel = `${formatSecondsToLabel(state.startTime)} - ${formatSecondsToLabel(state.endTime)}`;
 
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({
+  try {
+    const response = await safeSendMessage({
       type: 'SAVE_HIGHLIGHT',
       highlight: {
         videoId: state.videoId,
@@ -1040,8 +1097,11 @@ async function persistHighlightRange(state, note) {
         videoUrl: `https://www.youtube.com/watch?v=${state.videoId}&t=${state.startTime}`,
         createdAt: new Date().toISOString()
       }
-    }, (response) => resolve(response));
-  });
+    });
+    return response;
+  } catch (error) {
+    return { success: false, error: error?.message || 'Failed to save highlight' };
+  }
 }
 
 async function createVideoHighlight() {
@@ -1330,15 +1390,15 @@ function startWatchDetection() {
       totalWatchTimeSeconds += elapsed;
 
       // Store total watch time
-      chrome.storage.local.set({ totalWatchTime: totalWatchTimeSeconds });
+      safeStorageSet({ totalWatchTime: totalWatchTimeSeconds });
 
       // Notify background every 30 seconds
       if (Math.floor(totalWatchTimeSeconds) % 30 === 0) {
-        chrome.runtime.sendMessage({
+        safeSendMessage({
           type: 'WATCH_STATUS_UPDATE',
           isWatching: true,
           totalWatchTimeSeconds: totalWatchTimeSeconds
-        });
+        }).catch(() => { });
       }
     }
 
@@ -1354,7 +1414,7 @@ function stopWatchDetection() {
     watchDetectionInterval = null;
   }
   totalWatchTimeSeconds = 0;
-  chrome.storage.local.set({ totalWatchTime: 0 });
+  safeStorageSet({ totalWatchTime: 0 });
   console.log('[Watch Detection] Stopped');
 }
 
@@ -1370,7 +1430,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 // Initialize watch detection if session is active
-chrome.storage.local.get(['sessionActive', 'totalWatchTime'], (prefs) => {
+safeStorageGet(['sessionActive', 'totalWatchTime'], (prefs) => {
   if (prefs.sessionActive) {
     totalWatchTimeSeconds = prefs.totalWatchTime || 0;
     startWatchDetection();
@@ -1558,7 +1618,7 @@ async function getVideoContext() {
 
   const titleEl = document.querySelector('#title h1 yt-formatted-string');
   const title = (titleEl ? titleEl.textContent : document.title).replace(' - YouTube', '');
-  const goalPrefs = await new Promise(resolve => chrome.storage.local.get(['goal', 'currentScore'], resolve));
+  const goalPrefs = await new Promise(resolve => safeStorageGet(['goal', 'currentScore'], resolve));
 
   return {
     videoId,
@@ -1938,17 +1998,15 @@ async function openAddVideoModal() {
         return;
       }
 
-      const saveResponse = await new Promise(resolve => {
-        chrome.runtime.sendMessage({
-          type: 'LIBRARIAN_SAVE_ITEM',
-          video_id: context.videoId,
-          title: context.title,
-          goal: context.goal,
-          score: context.score,
-          video_url: context.videoUrl,
-          transcript: transcriptAvailable ? transcript : '',
-          description
-        }, resolve);
+      const saveResponse = await safeSendMessage({
+        type: 'LIBRARIAN_SAVE_ITEM',
+        video_id: context.videoId,
+        title: context.title,
+        goal: context.goal,
+        score: context.score,
+        video_url: context.videoUrl,
+        transcript: transcriptAvailable ? transcript : '',
+        description
       });
 
       if (!saveResponse?.success) {
@@ -1958,16 +2016,14 @@ async function openAddVideoModal() {
       if (summaryToggleEl.checked) {
         const summaryResult = await scrapeSummaryFromYouTubeAskPanel();
         if (summaryResult?.success && summaryResult.summary) {
-          await new Promise(resolve => {
-            chrome.runtime.sendMessage({
-              type: 'LIBRARIAN_SAVE_SUMMARY',
-              video_id: context.videoId,
-              title: context.title,
-              goal: context.goal,
-              video_url: context.videoUrl,
-              summary: summaryResult.summary,
-              source: 'youtube_ask'
-            }, resolve);
+          await safeSendMessage({
+            type: 'LIBRARIAN_SAVE_SUMMARY',
+            video_id: context.videoId,
+            title: context.title,
+            goal: context.goal,
+            video_url: context.videoUrl,
+            summary: summaryResult.summary,
+            source: 'youtube_ask'
           });
         } else {
           console.warn('[Add] Summary requested but extraction failed:', summaryResult?.error);
@@ -2461,7 +2517,7 @@ function updateFilterStatusBadge() {
 
 function ensureFilteredRecentVideosCacheLoaded() {
   if (filteredRecentVideosLoaded) return;
-  chrome.storage.local.get(['filteredVideosRemovedRecent'], (data) => {
+  safeStorageGet(['filteredVideosRemovedRecent'], (data) => {
     filteredRecentVideosCache = Array.isArray(data.filteredVideosRemovedRecent)
       ? data.filteredVideosRemovedRecent
       : [];
@@ -2638,13 +2694,13 @@ function recordFilteredRecommendation(recommendation, decision) {
   const payload = buildFilteredVideoPayload(recommendation, decision);
   if (!payload) return;
 
-  chrome.storage.local.get(['filteredVideosRemovedTotal', 'filteredVideosRemovedRecent'], (data) => {
+  safeStorageGet(['filteredVideosRemovedTotal', 'filteredVideosRemovedRecent'], (data) => {
     const total = Number(data.filteredVideosRemovedTotal || 0) + 1;
     const recent = Array.isArray(data.filteredVideosRemovedRecent) ? data.filteredVideosRemovedRecent : [];
     const deduped = [payload, ...recent.filter(item => item.video_id !== payload.video_id)];
     filteredRecentVideosCache = deduped.slice(0, 40);
     filteredRecentVideosLoaded = true;
-    chrome.storage.local.set({
+    safeStorageSet({
       filteredVideosRemovedTotal: total,
       filteredVideosRemovedRecent: filteredRecentVideosCache
     });
