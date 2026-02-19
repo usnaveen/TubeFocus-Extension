@@ -569,16 +569,6 @@ async function sendMessage() {
     appendMessage('bot', 'Searching knowledge base...', loadingId, true);
 
     try {
-        // Local deterministic fallback for inventory-style queries.
-        if (!contextVideo && isSavedInventoryQuery(text) && savedVideosCache.length > 0) {
-            const loadingEl = document.getElementById(loadingId);
-            if (loadingEl) loadingEl.remove();
-            const local = buildLocalInventoryResponse(text);
-            appendMessageWithSources('bot', local.answer, local.sources);
-            history.scrollTop = history.scrollHeight;
-            return;
-        }
-
         const body = { query: text };
         if (contextVideo) body.focus_video_id = contextVideo.video_id;
 
@@ -598,18 +588,9 @@ async function sendMessage() {
 
         // Bot answer
         const payload = data.response || data || {};
-        let answerText = payload.answer || 'I could not find relevant information.';
-        let sources = payload.sources || [];
-
-        // If backend claims empty inventory but dashboard already has videos, answer locally.
-        const backendEmptyInventory = /do not have any saved videos|could not find matching saved videos/i.test(answerText.toLowerCase());
-        if (backendEmptyInventory && savedVideosCache.length > 0) {
-            const local = buildLocalInventoryResponse(text);
-            answerText = local.answer;
-            sources = local.sources;
-        }
-
-        appendMessageWithSources('bot', answerText, sources);
+        const answerText = payload.answer || 'I could not find relevant information.';
+        const sources = payload.sources || [];
+        appendMessageWithSources('bot', answerText, sources, payload.meta || null);
 
     } catch (e) {
         console.error('Chat error:', e);
@@ -632,7 +613,7 @@ function appendMessage(type, text, id, isLoading) {
     history.scrollTop = history.scrollHeight;
 }
 
-function appendMessageWithSources(type, text, sources) {
+function appendMessageWithSources(type, text, sources, meta = null) {
     const history = document.getElementById('chat-history');
     const wrapper = document.createElement('div');
 
@@ -641,6 +622,16 @@ function appendMessageWithSources(type, text, sources) {
     msgDiv.className = `message ${type}`;
     msgDiv.textContent = text;
     wrapper.appendChild(msgDiv);
+
+    if (meta && type === 'bot') {
+        const trace = document.createElement('div');
+        const usedLlm = meta.used_llm === true;
+        const focus = meta.focus_video_id ? ` | focus: ${meta.focus_video_id}` : '';
+        const inferred = meta.inferred_focus ? ' | inferred focus' : '';
+        trace.textContent = `RAG mode: ${usedLlm ? 'LLM' : 'Grounded fallback'}${focus}${inferred}`;
+        trace.style.cssText = 'font-size:11px;opacity:0.7;margin:6px 4px 2px 6px;';
+        wrapper.appendChild(trace);
+    }
 
     // Source cards
     if (sources && sources.length > 0) {
@@ -785,37 +776,6 @@ function getSourceThumbnail(source) {
     const id = extractYoutubeId(source?.video_id || source?.video_url || source?.embed_url || '');
     if (!id) return '';
     return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
-}
-
-function isSavedInventoryQuery(query) {
-    const text = (query || '').toLowerCase();
-    const inventoryTerms = ['do i have', 'how many', 'show', 'list', 'is there', 'what are', 'which'];
-    const libraryTerms = ['saved', 'library', 'saved videos', 'in my library'];
-    return inventoryTerms.some(t => text.includes(t)) && libraryTerms.some(t => text.includes(t));
-}
-
-function buildLocalInventoryResponse(query) {
-    const text = (query || '').toLowerCase();
-    const rawTokens = text.replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
-    const stop = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'have', 'any', 'video', 'videos', 'saved', 'library', 'in', 'my', 'there', 'is', 'are', 'do', 'i', 'by', 'about', 'show', 'list']);
-    const tokens = rawTokens.filter(t => t.length > 2 && !stop.has(t));
-
-    const scored = savedVideosCache.map((v) => {
-        const hay = `${(v.title || '').toLowerCase()} ${(v.description || '').toLowerCase()}`;
-        const score = tokens.length ? tokens.reduce((n, t) => n + (hay.includes(t) ? 1 : 0), 0) : 1;
-        return { score, video: v };
-    }).filter(item => item.score > 0);
-
-    scored.sort((a, b) => b.score - a.score);
-    const matches = scored.length ? scored.map(item => item.video) : savedVideosCache;
-    const top = matches.slice(0, 3);
-
-    const lines = [`Yes. I found ${matches.length} saved video(s) in your library.`];
-    top.forEach((v) => {
-        lines.push(`- ${v.title || v.video_id}`);
-    });
-
-    return { answer: lines.join('\n'), sources: top };
 }
 
 function getWatchUrl(video) {
