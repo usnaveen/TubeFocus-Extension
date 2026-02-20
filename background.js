@@ -1,4 +1,11 @@
 // background.js
+
+try {
+  importScripts('libs/transformers.min.js', 'ml_service.js');
+} catch (e) {
+  console.error('[background] Failed to import ML worker scripts:', e);
+}
+
 console.log('[background] service worker started - CLOUD RUN MODE');
 console.log('[background] API Base URL:', 'https://yt-scorer-api-933573987016.us-central1.run.app');
 console.log('[background] Available endpoints: /score/detailed, /score/simple, /score/simple/fast, /feedback, /health');
@@ -116,6 +123,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
       });
     });
+  } else if (msg.type === 'BATCH_CALCULATE_SIMILARITY') {
+    if (typeof self.calculateBatchSimilarity === 'function') {
+      self.calculateBatchSimilarity(msg.goal, msg.recommendations)
+        .then(result => sendResponse(result))
+        .catch(err => sendResponse({ success: false, error: err.toString() }));
+    } else {
+      sendResponse({ success: false, error: 'ML Worker not properly initialized.' });
+    }
+    return true;
   } else
     if (msg.type === 'START_SESSION') {
       const endTime = Date.now() + msg.duration * 60 * 1000;

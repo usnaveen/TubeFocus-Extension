@@ -2376,21 +2376,7 @@ const GOAL_STOPWORDS = new Set([
   'study', 'watch', 'video', 'videos'
 ]);
 
-const LOCAL_FILTER_MODEL = {
-  threshold: 0.45,
-  bias: -0.25,
-  weights: {
-    goal_overlap: 3.0,
-    educational_hits: 0.95,
-    technical_hits: 0.8,
-    technical_intent_boost: 0.45,
-    long_form_bonus: 0.35,
-    entertainment_hits: -1.45,
-    clickbait_hits: -1.55,
-    channel_keyword_hit: -1.15,
-    uppercase_ratio: -0.8
-  }
-};
+// Semantic Model threshold is defined inline inside queueVisibleRecommendations
 
 function injectGatekeeperStyles() {
   if (document.getElementById('tubefocus-recommendation-filter-styles')) return;
@@ -2539,18 +2525,18 @@ function renderFilteredPopupContent(popup) {
   popup.innerHTML = '';
 
   const title = document.createElement('div');
-  title.textContent = 'Recently filtered videos';
+  title.textContent = 'Recently hidden by Focus Filter';
   title.style.cssText = `
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.8px;
     color: rgba(253, 240, 213, 0.75);
-    margin: 2px 4px 8px;
+    margin: 0 4px 12px;
     font-weight: 700;
   `;
   popup.appendChild(title);
 
-  const recent = filteredRecentVideosCache.slice(0, 12);
+  const recent = filteredRecentVideosCache.slice(0, 16);
   if (!recent.length) {
     const empty = document.createElement('div');
     empty.textContent = 'No filtered videos recorded yet.';
@@ -2563,6 +2549,13 @@ function renderFilteredPopupContent(popup) {
     return;
   }
 
+  const grid = document.createElement('div');
+  grid.style.cssText = `
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  `;
+
   for (const item of recent) {
     const link = document.createElement('a');
     link.href = item.url || `https://www.youtube.com/watch?v=${item.video_id || ''}`;
@@ -2570,64 +2563,74 @@ function renderFilteredPopupContent(popup) {
     link.rel = 'noopener noreferrer';
     link.style.cssText = `
       display: flex;
-      align-items: center;
-      gap: 8px;
+      flex-direction: column;
       text-decoration: none;
       border: 1px solid transparent;
-      border-radius: 8px;
-      padding: 7px;
-      margin-bottom: 4px;
+      border-radius: 6px;
+      padding: 4px;
+      transition: background 0.2s, border-color 0.2s;
     `;
     link.addEventListener('mouseenter', () => {
       link.style.borderColor = 'rgba(253, 240, 213, 0.28)';
-      link.style.background = 'rgba(255, 255, 255, 0.05)';
+      link.style.background = 'rgba(255, 255, 255, 0.08)';
     });
     link.addEventListener('mouseleave', () => {
       link.style.borderColor = 'transparent';
       link.style.background = 'transparent';
     });
 
+    const imgContainer = document.createElement('div');
+    imgContainer.style.position = 'relative';
+    imgContainer.style.width = '100%';
+    imgContainer.style.paddingTop = '56.25%'; // 16:9 aspect ratio
+    imgContainer.style.marginBottom = '6px';
+    imgContainer.style.borderRadius = '4px';
+    imgContainer.style.overflow = 'hidden';
+
     const img = document.createElement('img');
     img.src = item.thumbnail_url || '';
     img.alt = 'thumb';
     img.style.cssText = `
-      width: 90px;
-      height: 50px;
-      border-radius: 6px;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       object-fit: cover;
       background: rgba(255, 255, 255, 0.08);
-      flex-shrink: 0;
     `;
-    link.appendChild(img);
-
-    const meta = document.createElement('div');
-    meta.style.cssText = `min-width: 0; color: #fdf0d5;`;
+    imgContainer.appendChild(img);
+    link.appendChild(imgContainer);
 
     const titleLine = document.createElement('div');
     titleLine.textContent = item.title || item.video_id || 'Removed video';
     titleLine.style.cssText = `
-      font-size: 12px;
+      font-size: 11px;
+      color: #fdf0d5;
       font-weight: 600;
-      white-space: nowrap;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       overflow: hidden;
-      text-overflow: ellipsis;
     `;
-    meta.appendChild(titleLine);
+    link.appendChild(titleLine);
 
     const reasonLine = document.createElement('div');
-    reasonLine.textContent = formatFilterReasonLabel(item.reason);
+    reasonLine.textContent = `[${typeof item.score === 'number' ? item.score.toFixed(2) : '0.00'}] ${formatFilterReasonLabel(item.reason)}`;
     reasonLine.style.cssText = `
-      font-size: 10px;
-      color: rgba(253, 240, 213, 0.72);
-      margin-top: 2px;
+      font-size: 9px;
+      color: rgba(253, 240, 213, 0.6);
+      margin-top: 4px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     `;
-    meta.appendChild(reasonLine);
+    link.appendChild(reasonLine);
 
-    link.appendChild(meta);
-    popup.appendChild(link);
+    grid.appendChild(link);
   }
+
+  popup.appendChild(grid);
 }
 
 function attachRemovedPopupToScoreDisplay() {
@@ -2643,14 +2646,14 @@ function attachRemovedPopupToScoreDisplay() {
     position: absolute;
     left: 0;
     bottom: 34px;
-    width: 360px;
-    max-height: 360px;
+    width: 380px;
+    max-height: 420px;
     overflow-y: auto;
     background: rgba(20, 3, 5, 0.96);
     border: 1px solid rgba(253, 240, 213, 0.3);
     border-radius: 10px;
     box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
-    padding: 8px;
+    padding: 12px;
     display: none;
     text-align: left;
     z-index: 10001;
@@ -2733,110 +2736,82 @@ function overlapsGoal(title, goal) {
   return overlapCount / goalProfile.tokens.length;
 }
 
-function scoreRecommendationWithLocalModel(recommendation, goal) {
-  const title = recommendation.title || '';
-  const channel = recommendation.channel || '';
-  const normalizedTitle = normalizeFilterText(title);
-  const goalProfile = getGoalProfile(goal || 'general learning');
-
-  const features = {
-    goal_overlap: overlapsGoal(title, goal || 'general learning'),
-    educational_hits: clamp(countPatternHits(EDUCATIONAL_TITLE_HINTS, normalizedTitle), 0, 3),
-    technical_hits: clamp(countPatternHits(TECHNICAL_TITLE_HINTS, normalizedTitle), 0, 3),
-    technical_intent_boost: goalProfile.technicalIntent,
-    long_form_bonus: /\b\d+\s*(min|mins|minutes|hour|hours)\b/i.test(title) ? 1 : 0,
-    entertainment_hits: clamp(countPatternHits(ENTERTAINMENT_TITLE_PATTERNS, normalizedTitle), 0, 3),
-    clickbait_hits: clamp(countPatternHits(CLICKBAIT_TITLE_PATTERNS, normalizedTitle), 0, 3),
-    channel_keyword_hit: ENTERTAINMENT_CHANNEL_KEYWORDS.some(keyword => normalizeChannelName(channel).includes(keyword)) ? 1 : 0,
-    uppercase_ratio: clamp(getUppercaseRatio(title), 0, 1)
-  };
-
-  const w = LOCAL_FILTER_MODEL.weights;
-  const z =
-    LOCAL_FILTER_MODEL.bias +
-    (w.goal_overlap * features.goal_overlap) +
-    (w.educational_hits * features.educational_hits) +
-    (w.technical_hits * features.technical_hits) +
-    (w.technical_intent_boost * (features.technical_intent_boost * features.technical_hits)) +
-    (w.long_form_bonus * features.long_form_bonus) +
-    (w.entertainment_hits * features.entertainment_hits) +
-    (w.clickbait_hits * features.clickbait_hits) +
-    (w.channel_keyword_hit * features.channel_keyword_hit) +
-    (w.uppercase_ratio * features.uppercase_ratio);
-
-  return {
-    score: logistic(z),
-    features
-  };
-}
-
-function shouldHideRecommendation(recommendation, goal) {
-  if (isBlockedEntertainmentChannel(recommendation.channel || '')) {
-    return {
-      hide: true,
-      reason: 'blocked_channel',
-      score: 0.0
-    };
-  }
-
-  const model = scoreRecommendationWithLocalModel(recommendation, goal);
-  const features = model.features;
-  const heuristicDrop =
-    features.entertainment_hits >= 2 &&
-    features.goal_overlap === 0 &&
-    features.educational_hits === 0;
-
-  if (heuristicDrop) {
-    return {
-      hide: true,
-      reason: 'entertainment_pattern',
-      score: model.score
-    };
-  }
-
-  return {
-    hide: model.score < LOCAL_FILTER_MODEL.threshold,
-    reason: model.score < LOCAL_FILTER_MODEL.threshold ? 'low_model_score' : 'keep',
-    score: model.score
-  };
-}
-
-function applyRecommendationFilter(element, decision) {
-  if (!element) return;
-  if (decision.hide) {
-    element.classList.add('tubefocus-filter-hidden');
-  } else {
-    element.classList.remove('tubefocus-filter-hidden');
-  }
-  if (typeof decision.score === 'number') {
-    element.setAttribute('data-tubefocus-score', decision.score.toFixed(3));
-  } else {
-    element.removeAttribute('data-tubefocus-score');
-  }
-  updateFilterStatusBadge();
-}
-
-function processSidebarItem(element) {
+async function queueVisibleRecommendations() {
   if (!sessionActive) return;
-  if (element.getAttribute('data-tubefocus-filtered') === '1') return;
+  const elements = Array.from(document.querySelectorAll(RECOMMENDATION_SELECTORS))
+    .filter(el => el.getAttribute('data-tubefocus-filtered') !== '1');
 
-  const recommendation = extractSidebarRecommendation(element);
-  if (!recommendation) return;
+  if (!elements.length) return;
 
-  let decision = recommendationDecisionCache.get(recommendation.id);
-  if (!decision) {
-    decision = shouldHideRecommendation(recommendation, userGoal || 'General Learning');
-    recommendationDecisionCache.set(recommendation.id, decision);
+  const recommendations = [];
+  for (const el of elements) {
+    const rec = extractSidebarRecommendation(el);
+    if (rec && !recommendationDecisionCache.has(rec.id)) {
+      rec.element = el;
+      recommendations.push(rec);
+    } else if (rec) {
+      applyRecommendationFilter(el, recommendationDecisionCache.get(rec.id));
+      el.setAttribute('data-tubefocus-filtered', '1');
+    }
   }
-  applyRecommendationFilter(recommendation.element, decision);
-  recordFilteredRecommendation(recommendation, decision);
-  recommendation.element.setAttribute('data-tubefocus-filtered', '1');
-}
 
-function queueVisibleRecommendations() {
-  if (!sessionActive) return;
-  document.querySelectorAll(RECOMMENDATION_SELECTORS).forEach(processSidebarItem);
-  updateFilterStatusBadge();
+  if (!recommendations.length) return;
+
+  const validRecs = recommendations.filter(r => !isBlockedEntertainmentChannel(r.channel || ''));
+  recommendations.forEach(rec => {
+    if (isBlockedEntertainmentChannel(rec.channel || '')) {
+      const decision = { hide: true, reason: 'blocked_channel', score: 0.0 };
+      recommendationDecisionCache.set(rec.id, decision);
+      applyRecommendationFilter(rec.element, decision);
+      recordFilteredRecommendation(rec, decision);
+      rec.element.setAttribute('data-tubefocus-filtered', '1');
+    }
+  });
+
+  if (!validRecs.length) {
+    updateFilterStatusBadge();
+    return;
+  }
+
+  try {
+    const payload = validRecs.map(r => ({ id: r.id, title: r.title, channel: r.channel }));
+    const response = await safeSendMessage({
+      type: 'BATCH_CALCULATE_SIMILARITY',
+      goal: userGoal || 'general learning',
+      recommendations: payload
+    });
+
+    if (response && response.success) {
+      const SEMANTIC_THRESHOLD = 0.25;
+      response.results.forEach(res => {
+        const rec = validRecs.find(r => r.id === res.id);
+        if (rec) {
+          const normalizedTitle = normalizeFilterText(rec.title || '');
+          const entertainmentHits = countPatternHits(ENTERTAINMENT_TITLE_PATTERNS, normalizedTitle);
+
+          let decision;
+          if (entertainmentHits >= 2 && res.score < 0.4) {
+            decision = { hide: true, reason: 'entertainment_pattern', score: res.score };
+          } else {
+            decision = {
+              hide: res.score < SEMANTIC_THRESHOLD,
+              reason: res.score < SEMANTIC_THRESHOLD ? 'low_semantic_score' : 'keep',
+              score: res.score
+            };
+          }
+
+          recommendationDecisionCache.set(rec.id, decision);
+          applyRecommendationFilter(rec.element, decision);
+          recordFilteredRecommendation(rec, decision);
+          rec.element.setAttribute('data-tubefocus-filtered', '1');
+        }
+      });
+    }
+  } catch (error) {
+    console.warn('[Gatekeeper] Semantic filtering failed:', error);
+  } finally {
+    updateFilterStatusBadge();
+  }
 }
 
 function scheduleBatchProcessing() {
