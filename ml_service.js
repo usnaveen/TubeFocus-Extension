@@ -1,7 +1,6 @@
 // ml_service.js
-// Uses the global "transformers" object provided by transformers.min.js imported via importScripts
-
-const { pipeline, env, cos_sim } = self.transformers;
+// Uses the local version of transformers.js imported as an ES Module
+import { pipeline, env, cos_sim } from './libs/transformers.min.js';
 
 // Configure ONNX Runtime to use local WASM files instead of fetching from CDN
 // This is critical for Chrome Extension MV3 CSP compliance
@@ -22,15 +21,7 @@ class PipelineSingleton {
     }
 }
 
-// Background script listener
-self.addEventListener('message', (event) => {
-    // We'll receive BATCH_CALCULATE_SIMILARITY messages from background.js
-    // Or, background.js can listen for chrome runtime messages and call us directly.
-    // wait, since ml_service.js is imported into background.js, it shares the same service worker context.
-});
-
-// Expose a globally callable function since it's running in the background.js scope
-self.calculateBatchSimilarity = async (goal, recommendations) => {
+export async function calculateBatchSimilarity(goal, recommendations) {
     try {
         // Get or initialize the model
         const extractor = await PipelineSingleton.getInstance((data) => {
@@ -69,6 +60,6 @@ self.calculateBatchSimilarity = async (goal, recommendations) => {
         console.error('[ML Worker] Similarity calculation error:', error);
         return { success: false, error: error.message };
     }
-};
+}
 
-console.log('[ML Worker] Transformers.js service loaded.');
+console.log('[ML Worker] Transformers.js semantic service loaded as ES Module.');

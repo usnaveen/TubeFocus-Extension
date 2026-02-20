@@ -830,24 +830,36 @@ function appendMessageWithSources(type, text, sources, meta = null) {
 
             const inExtensionPage = window.location.protocol === 'chrome-extension:';
 
-            // YouTube preview: avoid iframe embeds in extension pages due Error 153.
-            const embedUrl = normalizeEmbedUrl(source.embed_url, source.video_id);
-            if (!inExtensionPage && embedUrl) {
-                html += `<iframe class="source-embed"
-          src="${esc(embedUrl)}"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowfullscreen></iframe>`;
+            // Generate the embed URL
+            let embedUrl = '';
+            if (source.video_id) {
+                // Ensure the domain matches the environment to avoid CSP/Error 153 issues if possible, 
+                // but standard youtube-nocookie is usually safest for extensions.
+                embedUrl = `https://www.youtube-nocookie.com/embed/${esc(source.video_id)}?enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`;
+            }
+
+            // Always render the player iframe if we have an embed URL, or fallback to thumbnail
+            if (embedUrl) {
+                const uniquePlayerId = `youtube-player-${source.video_id}-${Date.now()}`;
+                html += `<div class="video-player-container" style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; margin-bottom:10px; border-radius:8px; background:#000;">
+                    <iframe id="${uniquePlayerId}" src="${esc(embedUrl)}" 
+                        style="position:absolute; top:0; left:0; width:100%; height:100%; border:0;" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                        allowfullscreen>
+                    </iframe>
+                </div>`;
+
+                // Add to highlight click tracking so we know which iframe to target
+                card.dataset.playerId = uniquePlayerId;
+                card.dataset.videoId = source.video_id;
+
             } else if (source.video_id) {
-                const thumb = getSourceThumbnail(source);
-                const watchUrl = source.video_url || getWatchUrl(source);
-                if (thumb) {
-                    html += `<a href="${esc(watchUrl)}" target="_blank" rel="noopener noreferrer" style="display:block;position:relative;margin-bottom:10px;">
-            <img src="${esc(thumb)}" alt="thumbnail" style="width:100%;height:200px;object-fit:cover;border-radius:8px;background:#000;">
-            <span style="position:absolute;right:10px;bottom:10px;background:rgba(0,0,0,0.7);color:#fff;padding:6px 10px;border-radius:999px;font-size:12px;">Open on YouTube</span>
-          </a>`;
-                } else {
-                    html += `<a href="${esc(watchUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-bottom:10px;font-size:12px;">Open on YouTube</a>`;
-                }
+                const thumb = `https://i.ytimg.com/vi/${esc(source.video_id)}/hqdefault.jpg`;
+                const watchUrl = `https://www.youtube.com/watch?v=${esc(source.video_id)}`;
+                html += `<a href="${esc(watchUrl)}" target="_blank" rel="noopener noreferrer" style="display:block;position:relative;margin-bottom:10px;">
+                    <img src="${esc(thumb)}" alt="thumbnail" style="width:100%;height:200px;object-fit:cover;border-radius:8px;background:#000;">
+                    <span style="position:absolute;right:10px;bottom:10px;background:rgba(0,0,0,0.7);color:#fff;padding:6px 10px;border-radius:999px;font-size:12px;">Open on YouTube</span>
+                </a>`;
             }
 
             // Summary
@@ -859,11 +871,12 @@ function appendMessageWithSources(type, text, sources, meta = null) {
             const highlights = source.highlights || [];
             if (highlights.length > 0) {
                 html += `<div class="source-highlights">
-          <div class="source-highlights-title">Your Highlights (${highlights.length})</div>`;
+                    <div class="source-highlights-title">Your Highlights (${highlights.length})</div>`;
 
                 highlights.forEach(h => {
                     const ts = h.timestamp || 0;
-                    html += `<div class="source-highlight-item" onclick="jumpToTimestamp('${esc(source.video_id)}',${ts})">
+                    // Pass the video_id and timestamp to the new play logic
+                    html += `<div class="source-highlight-item" onclick="playInIframe(this, '${esc(source.video_id)}', ${ts})">
             <span class="source-highlight-time">${esc(h.range_label || formatTime(ts))}</span>
             <span class="source-highlight-text">
               ${esc(h.note || h.text || h.transcript || '')}
@@ -1013,13 +1026,37 @@ function getHighlightWatchUrl(highlight) {
     return `https://youtube.com/watch?v=${id}${ts ? `&t=${Math.floor(ts)}s` : ''}`;
 }
 
-function formatTime(seconds) {
-    const s = Math.floor(seconds);
-    const mins = Math.floor(s / 60);
-    const secs = s % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+function formatTime(sec) {
+    if (!Number.isFinite(sec)) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+// Global function to handle playing a highlight inside the nearest iframe
+window.playInIframe = function (element, videoId, startSeconds) {
+    // Traverse UP to find the source-card container
+    const card = element.closest('.source-card');
+    if (card && card.dataset.playerId) {
+        const iframe = document.getElementById(card.dataset.playerId);
+        if (iframe) {
+            // Update iframe src to autoplay at the specific timestamp
+            const origin = encodeURIComponent(window.location.origin);
+            iframe.src = `https://www.youtube-nocookie.com/embed/${esc(videoId)}?start=${Math.floor(startSeconds)}&autoplay=1&enablejsapi=1&origin=${origin}`;
+
+            // Add momentary highlight effect
+            element.style.background = 'rgba(255, 255, 255, 0.2)';
+            setTimeout(() => { element.style.background = ''; }, 300);
+            return;
+        }
+    }
+
+    // Fallback logic if iframe wasn't found (e.g. they are in the popup with no iframe)
+    jumpToTimestamp(videoId, startSeconds);
+};
+
+// Global for inline onclick
+window.jumpToTimestamp = jumpToTimestamp;
 function esc(str) {
     const d = document.createElement('div');
     d.textContent = str || '';
