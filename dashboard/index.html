@@ -443,6 +443,34 @@
             gap: 3px;
         }
 
+        .item-delete-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(138, 28, 36, 0.8);
+            color: #fff;
+            border: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s ease, background 0.2s ease;
+            z-index: 10;
+        }
+
+        .video-item:hover .item-delete-btn,
+        .highlight-item:hover .item-delete-btn {
+            opacity: 1;
+        }
+
+        .item-delete-btn:hover {
+            background: rgba(255, 50, 50, 0.9);
+        }
+
         /* ========== SESSION ITEM ========== */
         .session-item {
             background: rgba(0, 0, 0, 0.2);
@@ -1040,7 +1068,8 @@
             </div>
             <div class="chat-history" id="chat-history">
                 <div class="message bot">
-                    Hello! I'm your Librarian Agent. I can query your saved videos and highlights. Try asking "What are my highlights?" or drag a video/highlight here. Click "Ask AI" on any highlight to dive deeper.
+                    Hello! I'm your Librarian Agent. I can query your saved videos and highlights. Try asking "What are
+                    my highlights?" or drag a video/highlight here. Click "Ask AI" on any highlight to dive deeper.
                 </div>
             </div>
             <div class="chat-context-chip" id="chat-context-chip">

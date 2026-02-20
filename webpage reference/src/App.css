@@ -1,0 +1,181 @@
+/* App-specific styles */
+
+/* Ensure proper panel behavior */
+[data-panel] {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Smooth transitions for panel resizing */
+[data-panel-group] {
+  transition: gap 0.1s ease;
+}
+
+/* Custom badge styling */
+.badge-custom {
+  background: rgba(253, 240, 213, 0.15);
+  color: #fdf0d5;
+  border: 1px solid rgba(253, 240, 213, 0.25);
+}
+
+/* Enhanced hover states */
+.video-item,
+.highlight-item,
+.session-item {
+  position: relative;
+  overflow: hidden;
+}
+
+.video-item::before,
+.highlight-item::before,
+.session-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(253, 240, 213, 0.05) 0%, transparent 50%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.video-item:hover::before,
+.highlight-item:hover::before,
+.session-item:hover::before {
+  opacity: 1;
+}
+
+/* Chat message animations */
+.message {
+  position: relative;
+}
+
+.message.bot::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  background: #fdf0d5;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+.message.user::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  background: #8a1c24;
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+/* Loading animation */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.message.loading::after {
+  content: '...';
+  animation: pulse-dot 1.5s infinite;
+}
+
+/* Source card enhancements */
+.source-card {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.source-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+}
+
+/* Highlight item in source card */
+.source-highlight-item {
+  position: relative;
+  padding-left: 12px;
+}
+
+.source-highlight-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: #8a1c24;
+  border-radius: 2px;
+  opacity: 0.3;
+  transition: opacity 0.2s ease;
+}
+
+.source-highlight-item:hover::before {
+  opacity: 0.6;
+}
+
+/* Chart tooltip customization */
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}
+
+/* Scrollbar styling for webkit browsers */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(253, 240, 213, 0.25) transparent;
+}
+
+/* Focus states */
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid rgba(253, 240, 213, 0.5);
+  outline-offset: 2px;
+}
+
+/* Drag and drop visual feedback */
+.dragging {
+  cursor: grabbing !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .stat-val {
+    font-size: 1.4rem;
+  }
+}
+
+/* Glassmorphism effect enhancement */
+.resizable-panel {
+  box-shadow: 
+    0 4px 24px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Header gradient */
+header {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0.05) 100%);
+}
+
+/* Timestamp badge */
+.highlight-timestamp {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.highlight-timestamp::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+  border-radius: 50%;
+  margin-right: 4px;
+  opacity: 0.6;
+}

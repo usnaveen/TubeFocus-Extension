@@ -212,6 +212,9 @@ async function loadSavedVideos() {
            draggable="true"
            data-idx="${i}"
            onclick="window.open('${esc(getWatchUrl(v))}','_blank')">
+        <button class="item-delete-btn" onclick="deleteVideo(event, '${esc(v.video_id)}')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>
+        </button>
         <div class="video-title">${esc(v.title || v.video_id)}</div>
         <div class="video-meta">
           <span class="save-mode-badge">
@@ -346,7 +349,10 @@ async function loadHighlights() {
 
         list.innerHTML = highlights.map((h, idx) => `
       <div class="highlight-item" draggable="true" data-hidx="${idx}">
-        <div class="highlight-meta">
+        <button class="item-delete-btn" onclick="deleteHighlight(event, '${esc(h.id || '')}')" style="top:10px; right:12px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>
+        </button>
+        <div class="highlight-meta" style="padding-right: 32px;">
           <span class="highlight-timestamp" onclick="window.open('${esc(getHighlightWatchUrl(h))}','_blank')">${esc(h.range_label || formatTime(h.timestamp || 0))}</span>
           <span class="highlight-video-name">${esc(h.video_title || h.video_id || '')}</span>
           <button class="highlight-ask-btn" data-hidx="${idx}" title="Ask about this highlight">Ask AI</button>
@@ -397,6 +403,77 @@ async function loadHighlights() {
     } catch (e) {
         console.warn('Highlights load failed:', e);
         list.innerHTML = '<div class="empty-state">Could not load highlights.</div>';
+    }
+}
+
+async function deleteHighlight(event, highlightId) {
+    event.stopPropagation();
+    if (!highlightId) {
+        alert("Cannot delete this highlight (missing ID).");
+        return;
+    }
+    if (!confirm("Are you sure you want to delete this highlight?")) return;
+
+    const btn = event.currentTarget;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span style="font-size:10px;">...</span>';
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/highlights/${highlightId}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            // Remove from UI immediately
+            const item = btn.closest('.highlight-item');
+            if (item) item.remove();
+
+            // Re-fetch to update badge and cached arrays
+            loadHighlights();
+        } else {
+            console.error('Delete failed:', data);
+            alert("Failed to delete highlight: " + (data.error || data.message || "Unknown error"));
+            btn.innerHTML = originalText;
+        }
+    } catch (err) {
+        console.error('Delete error:', err);
+        alert("Failed to delete highlight due to networking error.");
+        btn.innerHTML = originalText;
+    }
+}
+
+async function deleteVideo(event, videoId) {
+    event.stopPropagation();
+    if (!videoId) return;
+    if (!confirm("Are you sure you want to delete this video and all its chunks?")) return;
+
+    const btn = event.currentTarget;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span style="font-size:10px;">...</span>';
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/librarian/video/${videoId}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            const item = btn.closest('.video-item');
+            if (item) item.remove();
+
+            loadSavedVideos();
+        } else {
+            console.error('Delete failed:', data);
+            alert("Failed to delete video: " + (data.error || data.message || "Unknown error"));
+            btn.innerHTML = originalText;
+        }
+    } catch (err) {
+        console.error('Delete error:', err);
+        alert("Failed to delete video due to networking error.");
+        btn.innerHTML = originalText;
     }
 }
 
