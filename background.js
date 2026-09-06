@@ -1,8 +1,9 @@
 // background.js
 
 import { calculateBatchSimilarity } from './ml_service.js';
+import { scoreVideoLocalFirst } from './local_score_router.js';
 
-console.log('[background] service worker started - CLOUD RUN MODE');
+console.log('[background] service worker started - LOCAL-FIRST SCORER');
 console.log('[background] API Base URL:', 'https://yt-scorer-api-933573987016.us-central1.run.app');
 console.log('[background] Available endpoints: /score/detailed, /score/simple, /score/simple/fast, /feedback, /health');
 
@@ -185,38 +186,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           let description = '';
 
           try {
-            // Use unified score endpoint
-            const endpoint = `${CONFIG.API_BASE_URL}/score`;
-            const requestBody = {
-              video_url: `https://www.youtube.com/watch?v=${msg.videoId}`,
+            const data = await scoreVideoLocalFirst({
               goal: prefs.goal,
-              mode: 'title_and_description'
-            };
+              url: `https://www.youtube.com/watch?v=${msg.videoId}`,
+              title: msg.title || '',
+              description: msg.description || '',
+              channel: msg.channel || ''
+            }, CONFIG);
 
-            console.log('[background] Making API call to:', endpoint);
-
-            const res = await fetch(endpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-API-KEY': CONFIG.API_KEY
-              },
-              body: JSON.stringify(requestBody)
-            });
-
-            if (!res.ok) {
-              throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            if (data.error && data.score == null) {
+              throw new Error(data.error);
             }
 
-            const data = await res.json();
-            score = data.score || data;
-
-            // Backend now provides metadata!
-            title = data.title || 'Unknown Video';
-            description = data.description || '';
-
+            score = data.score;
+            title = data.title || msg.title || 'Unknown Video';
+            description = data.description || msg.description || '';
+            console.log('[background] videoData scored via', data.source, 'score=', score, 'confidence=', data.confidence);
           } catch (e) {
-            console.error('[background] API call failed:', e);
+            console.error('[background] Scoring failed:', e);
             score = null;
           }
 
@@ -231,89 +218,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
       });
     } else if (msg.type === 'FETCH_SCORE') {
-      console.log('[background] FETCH_SCORE request', msg);
+      console.log('[background] FETCH_SCORE request (local-first)', msg);
 
-      // Use unified score endpoint
-      const endpoint = `${CONFIG.API_BASE_URL}/score`;
-      const requestBody = {
-        video_url: msg.url,
+      scoreVideoLocalFirst({
         goal: msg.goal,
-        mode: 'title_and_description'
-      };
-
-      console.log('[background] LOCAL DEV: FETCH_SCORE API call to:', endpoint);
-      console.log('[background] LOCAL DEV: Request body:', requestBody);
-
-      fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': CONFIG.API_KEY
-        },
-        body: JSON.stringify(requestBody)
-      })
-        .then(res => {
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-          }
-          return res.json();
-        })
+        url: msg.url,
+        title: msg.title || '',
+        description: msg.description || '',
+        channel: msg.channel || ''
+      }, CONFIG)
         .then(data => {
-          console.log('[background] LOCAL DEV: FETCH_SCORE response:', data);
+          console.log('[background] FETCH_SCORE result:', { source: data.source, score: data.score, confidence: data.confidence });
           sendResponse(data);
         })
         .catch(err => {
-          console.error('[background] LOCAL DEV: FETCH_SCORE error:', err);
-
-          // If it's a 404 error with the fast endpoint, try the regular endpoint
-          if (msg.scoringType === 'simple' && endpoint.includes('/fast') && err.message.includes('404')) {
-            console.log('[background] Fast endpoint not found, trying regular /score endpoint');
-            const fallbackEndpoint = `${CONFIG.API_BASE_URL}/score`;
-
-            fetch(fallbackEndpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-API-KEY': CONFIG.API_KEY
-              },
-              body: JSON.stringify(requestBody)
-            })
-              .then(res => {
-                if (!res.ok) {
-                  throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-                }
-                return res.json();
-              })
-              .then(data => {
-                console.log('[background] LOCAL DEV: FETCH_SCORE fallback response:', data);
-                sendResponse(data);
-              })
-              .catch(fallbackErr => {
-                console.error('[background] LOCAL DEV: Fallback also failed:', fallbackErr);
-                sendResponse({ error: 'Backend server not available' });
-              });
-            return;
-          }
-
-          console.log('[background] LOCAL DEV: Make sure the dev container is running on localhost:8080');
-
-          // Provide more specific error messages
-          let errorMessage = 'Connection failed';
-          if (err.message.includes('Failed to fetch')) {
-            errorMessage = 'Backend server not running';
-          } else if (err.message.includes('404')) {
-            errorMessage = 'API endpoint not found';
-          } else if (err.message.includes('500')) {
-            errorMessage = 'Server error occurred';
-          } else if (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED')) {
-            errorMessage = 'Cannot connect to backend';
-          } else {
-            errorMessage = err.message;
-          }
-
-          sendResponse({ error: errorMessage });
+          console.error('[background] FETCH_SCORE error:', err);
+          sendResponse({ error: err.message || 'Scoring failed' });
         });
-      return true; // Keep the message channel open for sendResponse
+      return true;
     } else if (msg.type === 'COACH_ANALYZE') {
       console.log('[background] COACH_ANALYZE request for session:', msg.sessionId);
 
