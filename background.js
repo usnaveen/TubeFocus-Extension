@@ -10,7 +10,12 @@ console.log('[background] Available endpoints: /score/detailed, /score/simple, /
 // Configuration - CLOUD RUN
 const CONFIG = {
   API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',
-  API_KEY: 'test_key'
+  API_KEY: 'test_key',
+  LOCAL_FIRST: true,
+  CLOUD_FALLBACK: true,
+  HYBRID_CONFIDENCE_THRESHOLD: 0.55,
+  LOW_CONFIDENCE: 0.55,
+  OFFLINE_MODE: false
 };
 
 const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;
@@ -218,17 +223,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
       });
     } else if (msg.type === 'FETCH_SCORE') {
-      console.log('[background] FETCH_SCORE request (local-first)', msg);
+      console.log('[background] FETCH_SCORE request (hybrid)', msg);
 
       scoreVideoLocalFirst({
         goal: msg.goal,
         url: msg.url,
         title: msg.title || '',
         description: msg.description || '',
-        channel: msg.channel || ''
+        channel: msg.channel || '',
+        forceCloud: Boolean(msg.forceCloud || msg.deepAudit || msg.coach),
+        mode: msg.mode || 'title_and_description'
       }, CONFIG)
         .then(data => {
-          console.log('[background] FETCH_SCORE result:', { source: data.source, score: data.score, confidence: data.confidence });
+          console.log('[background] FETCH_SCORE result:', {
+            source: data.source,
+            score: data.score,
+            confidence: data.confidence,
+            hybrid_meta: data.hybrid_meta
+          });
           sendResponse(data);
         })
         .catch(err => {

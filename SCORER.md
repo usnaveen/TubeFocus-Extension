@@ -24,3 +24,11 @@ Service worker already `"type": "module"` — no offscreen required for first PR
 ## API surface for sibling bots
 - Local result: `{ success, score (0-100), confidence (0-1), similarity, source: "local"|"hybrid"|"cloud", model }`
 - Model id: `Xenova/all-MiniLM-L6-v2` (swap to fine-tuned/ONNX when Backend ml/ ships)
+
+## Hybrid routing (Coder Bot 3)
+
+- `hybridScorer.js` — confidence hybrid: local-first; cloud when `confidence < 0.55` or `forceCloud`; offline never calls cloud.
+- `local_score_router.js` — delegates to `hybridScorer` while keeping `scoreVideoLocalFirst` API.
+- Config: `HYBRID_CONFIDENCE_THRESHOLD` / `LOW_CONFIDENCE` (0.55), `OFFLINE_MODE`, storage overrides `offlineMode` / `hybridConfidenceThreshold`.
+- `FETCH_SCORE` accepts `forceCloud` | `deepAudit` | `coach` to force Gemini for audit/coach paths.
+- Backend docs: `docs/on-device-scoring.md` + `eval/` offline harness.

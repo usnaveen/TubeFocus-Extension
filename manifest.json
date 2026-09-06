@@ -56,7 +56,8 @@
         "wasm/*",
         "libs/*",
         "ml_service.js",
-        "local_score_router.js"
+        "local_score_router.js",
+        "hybridScorer.js"
       ],
       "matches": [
         "https://*.youtube.com/*"
