@@ -2736,6 +2736,59 @@ function overlapsGoal(title, goal) {
   return overlapCount / goalProfile.tokens.length;
 }
 
+
+/**
+ * Apply a keep/purge decision to a recommendation card.
+ * NAV-43: purge uses softHide (restorable + Undo toast) instead of hard remove.
+ * Bot2 snap path should prefer window.TubeFocusPurgeSnap.snapHide → softHide.
+ */
+function applyRecommendationFilter(el, decision) {
+  if (!el || !decision) return;
+
+  const purgeApi = (typeof window !== 'undefined' && window.TubeFocusPurge) ? window.TubeFocusPurge : null;
+  const shouldPurge = (typeof window !== 'undefined' && window.TubeFocusPurgeDecision)
+    ? window.TubeFocusPurgeDecision.shouldPurge(decision)
+    : !!decision.hide;
+
+  const rec = extractSidebarRecommendation(el);
+  const videoId = (rec && rec.id) || el.getAttribute('data-tubefocus-video-id') || null;
+  const title = (rec && rec.title) || '';
+
+  if (shouldPurge) {
+    if (purgeApi && typeof purgeApi.softHide === 'function') {
+      purgeApi.softHide(el, {
+        videoId,
+        reason: decision.reason || 'purged',
+        score: typeof decision.score === 'number' ? decision.score : undefined,
+        title
+      });
+    } else {
+      el.classList.add('tubefocus-filter-hidden');
+      el.setAttribute('data-tubefocus-purged', '1');
+      if (videoId) el.setAttribute('data-tubefocus-video-id', videoId);
+    }
+    if (typeof decision.score === 'number') {
+      el.setAttribute('data-tubefocus-score', String(decision.score));
+    }
+    return;
+  }
+
+  // Keep / unsure — ensure visible + keep metric (unsure does not count as purge)
+  if (el.classList.contains('tubefocus-filter-hidden') || el.getAttribute('data-tubefocus-purged') === '1') {
+    el.classList.remove('tubefocus-filter-hidden');
+    el.removeAttribute('data-tubefocus-purged');
+    el.removeAttribute('data-tubefocus-purge-reason');
+  }
+  if (typeof decision.score === 'number') {
+    el.setAttribute('data-tubefocus-score', String(decision.score));
+  }
+  const isUnsure = decision.decision === 'unsure' || decision.reason === 'unsure';
+  if (!isUnsure && purgeApi && typeof purgeApi.recordKeep === 'function' && !el.getAttribute('data-tubefocus-keep-counted')) {
+    purgeApi.recordKeep({ videoId, reason: decision.reason || 'keep', score: decision.score });
+    el.setAttribute('data-tubefocus-keep-counted', '1');
+  }
+}
+
 async function queueVisibleRecommendations() {
   if (!sessionActive) return;
   const elements = Array.from(document.querySelectorAll(RECOMMENDATION_SELECTORS))
@@ -2822,12 +2875,18 @@ function scheduleBatchProcessing() {
 function clearGatekeeperDecorations() {
   recommendationDecisionCache.clear();
   filteredRecommendationRuntimeSet.clear();
+  if (typeof window !== 'undefined' && window.TubeFocusPurge && typeof window.TubeFocusPurge.clearAllSoftHides === 'function') {
+    window.TubeFocusPurge.clearAllSoftHides();
+  }
   document.querySelectorAll('.tubefocus-filter-hidden').forEach((el) => {
     el.classList.remove('tubefocus-filter-hidden');
+    el.removeAttribute('data-tubefocus-purged');
+    el.removeAttribute('data-tubefocus-purge-reason');
   });
   document.querySelectorAll('[data-tubefocus-filtered="1"]').forEach((el) => {
     el.removeAttribute('data-tubefocus-filtered');
     el.removeAttribute('data-tubefocus-score');
+    el.removeAttribute('data-tubefocus-keep-counted');
   });
   updateFilterStatusBadge();
 }
