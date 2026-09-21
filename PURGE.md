@@ -91,3 +91,19 @@ Existing `FETCH_SCORE` / single-video flow is unchanged.
 - Snap-hide / CSS animation (Bot2)
 - Undo toast + purge metrics (Bot3)
 - Cloud/Jev re-score of unsure band (later hybrid)
+
+## NAV-41 — Snap hide (Bot2)
+
+`purge_snap.js` exposes `window.TubeFocusPurgeSnap`:
+
+```js
+TubeFocusPurgeSnap.snapHide(el, { videoId, reason, score, title });
+// animates ~300ms, then TubeFocusPurge.softHide (NAV-43 Undo toast)
+
+// Optional full pass (uses NAV-42 helpers when present):
+await TubeFocusPurgeSnap.runPurgePass({ goal: 'learn system design' });
+// snaps only decision === "purge"; leaves unsure/keep alone
+```
+
+Wire: `applyRecommendationFilter` → `snapHide` when `TubeFocusPurgeDecision.shouldPurge(decision)`.
+Manifest order: `purge_undo.js` → `purge_interfaces.js` → `purge_snap.js` → `content.js`.
