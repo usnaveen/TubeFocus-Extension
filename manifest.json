@@ -16,8 +16,11 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://*.youtube.com/*",
+    "https://huggingface.co/*",
+    "https://*.huggingface.co/*",
+    "https://cdn.jsdelivr.net/*",
     "https://yt-scorer-api-933573987016.us-central1.run.app/*",
+    "https://*.youtube.com/*",
     "http://localhost:8080/*"
   ],
   "background": {
@@ -49,5 +52,20 @@
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "wasm/*",
+        "libs/*",
+        "ml_service.js",
+        "local_score_router.js",
+        "purge_batch_scorer.js",
+        "config.js"
+      ],
+      "matches": [
+        "https://*.youtube.com/*"
+      ]
+    }
+  ]
 }

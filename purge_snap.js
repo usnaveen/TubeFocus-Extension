@@ -203,28 +203,29 @@
   function scoreViaBackground(goal, videos, engine) {
     return new Promise(function (resolve) {
       try {
-        chrome.runtime.sendMessage(
-          {
-            type: engine === 'jev' ? 'PURGE_SCORE_JEV' : 'BATCH_CALCULATE_SIMILARITY',
-            goal: goal || '',
-            recommendations: (videos || []).map(function (v) {
-              return {
-                id: v.videoId || v.id,
-                videoId: v.videoId || v.id,
-                title: v.title || '',
-                channel: v.channel || '',
-                description: v.description || ''
-              };
-            })
-          },
-          function (response) {
-            if (chrome.runtime.lastError) {
-              resolve({ success: false, error: chrome.runtime.lastError.message, results: [] });
-              return;
-            }
-            resolve(response || { success: false, results: [] });
+        var payload = (videos || []).map(function (v) {
+          return {
+            id: v.videoId || v.id,
+            videoId: v.videoId || v.id,
+            title: v.title || '',
+            channel: v.channel || '',
+            description: v.description || ''
+          };
+        });
+        var msg;
+        if (engine === 'jev') {
+          msg = { type: 'PURGE_SCORE_JEV', goal: goal || '', videos: payload, recommendations: payload };
+        } else {
+          // MiniLM offline path — prefer SCORE_BATCH (NAV-42); keep BATCH_CALCULATE_SIMILARITY as last resort
+          msg = { type: 'SCORE_BATCH', goal: goal || '', videos: payload };
+        }
+        chrome.runtime.sendMessage(msg, function (response) {
+          if (chrome.runtime.lastError) {
+            resolve({ success: false, error: chrome.runtime.lastError.message, results: [] });
+            return;
           }
-        );
+          resolve(response || { success: false, results: [] });
+        });
       } catch (err) {
         resolve({ success: false, error: err.message || String(err), results: [] });
       }
@@ -268,8 +269,14 @@
 
     var useJev = engine === 'jev';
     if (engine === 'auto') {
-      var cfg = await storageGet(['jevApiKey', 'purgeEngine']);
-      useJev = !!(cfg.jevApiKey || cfg.purgeEngine === 'jev');
+      // Jev only when a key is present in chrome.storage — never required for MiniLM demo
+      var cfg = await storageGet(['jevApiKey', 'TYPESAFE_API_KEY']);
+      useJev = !!(cfg.jevApiKey || cfg.TYPESAFE_API_KEY);
+    } else if (engine === 'jev') {
+      var cfgKey = await storageGet(['jevApiKey', 'TYPESAFE_API_KEY']);
+      if (!(cfgKey.jevApiKey || cfgKey.TYPESAFE_API_KEY)) {
+        useJev = false; // fall through to MiniLM
+      }
     }
 
     var results = [];

@@ -1,20 +1,56 @@
-# Purge mode — batch scorer API (NAV-42)
+# Purge mode (NAV-44 demo polish)
 
-Owner: Bot1. Snap-hide DOM is **Bot2 (NAV-41)**; Undo toast + metrics is **Bot3 (NAV-43)**.
+One branch that demos **Thanos snap** on YouTube Home + watch sidebar using **MiniLM only** (no API key). Optional **Jev** when a key is stored in `chrome.storage` (never commit a key).
 
-Offline / local-first: uses on-device MiniLM (`Xenova/all-MiniLM-L6-v2`) via `ml_service.js`. No Gemini/Jev required for v0.
+| Piece | Issue | Role |
+|-------|-------|------|
+| Batch MiniLM + cache | NAV-42 / PR #12 | `SCORE_BATCH` offline scorer |
+| Thanos snap + Jev + popup | NAV-41 / PR #13 | snap animation, engine switch, demo button |
+| Undo toast + metrics | NAV-43 / PR #11 | softHide, Undo ~5s, false-purge counts |
 
-## Message API (content → background)
+`FETCH_SCORE` / single-video local-first path is unchanged.
+
+---
+
+## Demo steps (MiniLM — no key needed)
+
+1. Load this unpacked extension in `chrome://extensions` (Developer mode → Load unpacked → this folder).
+2. Open [YouTube Home](https://www.youtube.com/) **or** a watch page with a sidebar.
+3. Open the TubeFocus popup:
+   - Set a clear **goal** (e.g. `learn system design`) — used for scoring.
+   - **Scorer** → `MiniLM — local / offline` (or leave `Auto`; without a key it uses MiniLM).
+   - Leave the Jev key field empty.
+   - Optionally check **Enable Purge during session**.
+4. Click **Thanos Snap Now**.
+5. First run may take a few seconds while MiniLM downloads/loads in the service worker; later snaps are faster (cache).
+6. Off-goal cards **dust away**, then soft-hide. An **Undo** toast appears ~5s — click Undo to restore (counts as false-purge).
+7. Popup metrics update: `keep · purge · undo/false · escalate`.
+
+Jev path (optional): paste a TypeSafe/Jev key in the masked field (stored only in `chrome.storage.local` as `jevApiKey`). Choose `Auto` or `Jev`. If the key is missing or Jev fails, MiniLM runs automatically.
+
+---
+
+## Dual engine
+
+| Engine | When | Message |
+|--------|------|---------|
+| **MiniLM** | Always works offline | `SCORE_BATCH` / `PURGE_SCORE_BATCH` → `purge_batch_scorer.js` |
+| **Jev** | Only if `jevApiKey` (or `TYPESAFE_API_KEY`) is in `chrome.storage.local` | `PURGE_SCORE_JEV` → `purge_jev_scorer.js` |
+
+Popup `purgeEngine`: `auto` | `minilm` | `jev`. Auto = Jev iff a key exists, else MiniLM.
+
+---
+
+## Message API — `SCORE_BATCH`
 
 ```js
 chrome.runtime.sendMessage({
   type: 'SCORE_BATCH',          // alias: PURGE_SCORE_BATCH
   goal: 'learn system design',
   videos: [
-    { videoId: 'abc123', title: '...', channel: '...', description: '...' } // desc optional
-  ],
-  // optional overrides (defaults from config.js / background CONFIG):
-  // PURGE_SCORE_BELOW, UNSURE_BAND, PURGE_LOW_CONFIDENCE, PURGE_BATCH_SIZE
+    { videoId: 'abc123', title: '...', channel: '...', description: '...' }
+  ]
+  // optional: PURGE_SCORE_BELOW, UNSURE_BAND, PURGE_LOW_CONFIDENCE, PURGE_BATCH_SIZE
 }, (res) => { /* ... */ });
 ```
 
@@ -28,7 +64,7 @@ chrome.runtime.sendMessage({
     {
       videoId: 'abc123',
       score: 28,              // 0–100 relevance
-      confidence: 0.9,        // 0–1
+      confidence: 0.9,
       decision: 'purge',      // 'keep' | 'purge' | 'unsure'
       cached: false,
       source: 'local',        // 'local' | 'cache' | 'deferred'
@@ -40,24 +76,18 @@ chrome.runtime.sendMessage({
 }
 ```
 
-Existing `FETCH_SCORE` / single-video flow is unchanged.
+Helpers (content):
 
-## How Bot2 should call it
+```js
+const candidates = TubeFocusPurge.collectCandidateVideos();
+const { results } = await TubeFocusPurge.requestPurgeScoreBatch(goal, candidates);
+// Snap only decision === 'purge'
+await TubeFocusPurgeSnap.runPurgePass({ goal, engine: 'minilm' });
+```
 
-1. Collect visible cards (or use the helper):
-   ```js
-   const candidates = TubeFocusPurge.collectCandidateVideos();
-   // [{ videoId, title, channel, element }, ...]
-   ```
-2. Ask background (model stays loaded in the service worker — do **not** import transformers in content):
-   ```js
-   const { results } = await TubeFocusPurge.requestPurgeScoreBatch(goal, candidates);
-   ```
-3. Snap-hide only `decision === 'purge'` cards (your NAV-41 animation). Leave `unsure` / `keep` alone.
-4. On scroll / mutation, call again — cache hits return instantly (`cached: true`).
-5. Chunk large feeds; background scores at most `PURGE_BATCH_SIZE` (~20) misses per call. Overflow rows come back as `decision: 'unsure'`, `source: 'deferred'` — retry next tick.
+---
 
-## Decision thresholds (`config.js`)
+## Thresholds (`config.js`)
 
 | Knob | Default | Meaning |
 |------|---------|---------|
@@ -67,43 +97,37 @@ Existing `FETCH_SCORE` / single-video flow is unchanged.
 | `PURGE_BATCH_SIZE` | `20` | max MiniLM embeds per message |
 | `PURGE_CACHE_MAX_ENTRIES` | `500` | LRU trim for persisted cache |
 
-## Cache key design
+Cache key: `` `${goalHash}:${videoId}` `` (goal change → new hash). Clear: `{ type: 'CLEAR_PURGE_SCORE_CACHE' }`.
 
-- Key: `` `${goalHash}:${videoId}` ``
-- `goalHash` = FNV-1a hex of normalized goal (`trim` + lower + collapse spaces)
-- Changing the goal → new hash → old rows never match (automatic invalidation)
-- Layers: in-memory Map (service worker lifetime) + `chrome.storage.local.purgeScoreCacheV1`
-- Clear all: `{ type: 'CLEAR_PURGE_SCORE_CACHE' }`
+---
+
+## End-to-end wire
+
+```
+popup [Thanos Snap Now]
+  → background PURGE_RUN_DEMO
+  → content TubeFocusPurgeSnap.runPurgePass
+  → SCORE_BATCH (MiniLM) or PURGE_SCORE_JEV (if keyed)
+  → snapHide → TubeFocusPurge.softHide (Undo toast + metrics)
+```
+
+Manifest content order: `purge_undo.js` → `purge_interfaces.js` → `purge_snap.js` → `content.js`.
+
+---
 
 ## Files
 
 | File | Role |
 |------|------|
-| `purge_batch_scorer.js` | `scoreVideosBatch`, cache, decisions |
-| `ml_service.js` | `scoreGoalRelevanceBatch` (goal embedded once) |
-| `local_score_router.js` | single-video FETCH_SCORE (unchanged) |
-| `background.js` | `SCORE_BATCH` / `PURGE_SCORE_BATCH` handlers |
+| `purge_batch_scorer.js` | MiniLM batch + cache + decisions |
+| `ml_service.js` | embeddings / `scoreGoalRelevanceBatch` |
+| `local_score_router.js` | single-video `FETCH_SCORE` (unchanged) |
+| `purge_jev_scorer.js` | optional Jev Choice map |
+| `purge_snap.js` | Thanos snap + `runPurgePass` |
+| `purge_undo.js` | softHide, Undo, false-purge metrics |
+| `purge_interfaces.js` | shared decision helpers |
+| `background.js` | `SCORE_BATCH`, `PURGE_SCORE_JEV`, `PURGE_RUN_DEMO`, `FETCH_SCORE` |
+| `popup.html` / `popup.js` | Purge toggle, engine, masked key, Snap, metrics |
 | `config.js` | purge thresholds |
-| `content.js` | `TubeFocusPurge.collectCandidateVideos` + `requestPurgeScoreBatch` |
 
-## Out of scope here
-
-- Snap-hide / CSS animation (Bot2)
-- Undo toast + purge metrics (Bot3)
-- Cloud/Jev re-score of unsure band (later hybrid)
-
-## NAV-41 — Snap hide (Bot2)
-
-`purge_snap.js` exposes `window.TubeFocusPurgeSnap`:
-
-```js
-TubeFocusPurgeSnap.snapHide(el, { videoId, reason, score, title });
-// animates ~300ms, then TubeFocusPurge.softHide (NAV-43 Undo toast)
-
-// Optional full pass (uses NAV-42 helpers when present):
-await TubeFocusPurgeSnap.runPurgePass({ goal: 'learn system design' });
-// snaps only decision === "purge"; leaves unsure/keep alone
-```
-
-Wire: `applyRecommendationFilter` → `snapHide` when `TubeFocusPurgeDecision.shouldPurge(decision)`.
-Manifest order: `purge_undo.js` → `purge_interfaces.js` → `purge_snap.js` → `content.js`.
+**Never commit API keys.** Store Jev keys only via the popup → `chrome.storage.local`.

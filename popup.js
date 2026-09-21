@@ -824,7 +824,8 @@ function displaySearchResults(response) {
     chrome.storage.local.get(['__tubefocusPurgeMetrics', 'tubefocusPurgeMetrics'], (d) => {
       const m = d.__tubefocusPurgeMetrics || d.tubefocusPurgeMetrics || {};
       if (metricsEl) {
-        metricsEl.textContent = `keep ${m.keep || 0} · purge ${m.purge || 0} · undo ${m.undo || 0} · escalate ${m.escalate || 0}`;
+        const falseN = m.falsePurge != null ? m.falsePurge : (m.undo || 0);
+        metricsEl.textContent = `purge ${m.purge || 0} · undo ${m.undo || 0} · false ${falseN} · keep ${m.keep || 0}`;
       }
     });
   }
@@ -835,6 +836,11 @@ function displaySearchResults(response) {
     if (enabledEl) enabledEl.checked = !!d.purgeEnabled;
   });
   refreshMetrics();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.__tubefocusPurgeMetrics || changes.tubefocusPurgeMetrics)) {
+      refreshMetrics();
+    }
+  });
 
   function persist() {
     chrome.storage.local.set({
@@ -852,9 +858,16 @@ function displaySearchResults(response) {
     setStatus('Snapping… open a YouTube tab with a goal set.');
     const engine = engineEl ? engineEl.value : 'auto';
     chrome.storage.local.get(['goal'], (d) => {
+      const goalInputEl = document.getElementById('goalInput');
+      const fromInput = (goalInputEl && goalInputEl.value || '').trim();
+      const goal = fromInput || (d.goal || '').trim() || '';
+      if (!goal) {
+        setStatus('Set a goal in the Setup field first (e.g. learn system design).');
+        return;
+      }
       chrome.runtime.sendMessage({
         type: 'PURGE_RUN_DEMO',
-        goal: d.goal || (document.getElementById('goalInput') || {}).value || '',
+        goal,
         engine
       }, (res) => {
         if (chrome.runtime.lastError) {
