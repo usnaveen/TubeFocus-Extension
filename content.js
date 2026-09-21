@@ -2458,6 +2458,85 @@ function getGoalProfile(goal) {
   return cachedGoalProfile;
 }
 
+
+
+/**
+ * NAV-42 helper for Purge (Bot2): collect feed/sidebar card metadata.
+ * Does NOT hide/animate — only extracts {videoId, title, channel, element}.
+ * Reuses the same selectors as the Focus Filter gatekeeper.
+ */
+function collectCandidateVideos(root = document) {
+  const selectors = Array.isArray(RECOMMENDATION_SELECTORS)
+    ? RECOMMENDATION_SELECTORS.join(', ')
+    : (typeof RECOMMENDATION_SELECTORS === 'string'
+      ? RECOMMENDATION_SELECTORS
+      : [
+          'ytd-compact-video-renderer',
+          'ytd-video-renderer',
+          'ytd-rich-item-renderer',
+          'ytd-grid-video-renderer'
+        ].join(', '));
+
+  const seen = new Set();
+  const out = [];
+  for (const el of root.querySelectorAll(selectors)) {
+    const rec = typeof extractSidebarRecommendation === 'function'
+      ? extractSidebarRecommendation(el)
+      : null;
+    if (!rec || !rec.id || seen.has(rec.id)) continue;
+    seen.add(rec.id);
+    out.push({
+      videoId: rec.id,
+      title: rec.title || '',
+      channel: rec.channel || '',
+      element: rec.element || el
+    });
+  }
+  return out;
+}
+
+/**
+ * Ask background to batch-score candidates (model loads once in SW).
+ * @returns {Promise<{success, results, stats, goalHash}>}
+ */
+function requestPurgeScoreBatch(goal, videos, extras = {}) {
+  const payload = (videos || []).map((v) => ({
+    videoId: v.videoId || v.id,
+    title: v.title || '',
+    channel: v.channel || '',
+    description: v.description || ''
+  }));
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: 'SCORE_BATCH',
+          goal: goal || '',
+          videos: payload,
+          ...extras
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            resolve({ success: false, error: chrome.runtime.lastError.message, results: [] });
+            return;
+          }
+          resolve(response || { success: false, error: 'empty response', results: [] });
+        }
+      );
+    } catch (err) {
+      resolve({ success: false, error: err.message || String(err), results: [] });
+    }
+  });
+}
+
+// Expose for Bot2 / console debugging without attaching hide logic here.
+try {
+  self.TubeFocusPurge = Object.assign(self.TubeFocusPurge || {}, {
+    collectCandidateVideos,
+    requestPurgeScoreBatch
+  });
+} catch (_) { /* ignore */ }
+
 function extractSidebarRecommendation(element) {
   const anchor = element.querySelector('a#thumbnail') || element.querySelector('a#video-title');
   const titleSpan = element.querySelector('#video-title, #video-title-link, h3 a#video-title');

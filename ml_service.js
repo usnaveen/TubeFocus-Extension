@@ -95,6 +95,53 @@ export async function scoreGoalRelevance(goal, { title = '', description = '', c
   }
 }
 
+
+/**
+ * Batch score videos against one goal (embeds goal once).
+ * @param {string} goal
+ * @param {Array<{videoId, title?, channel?, description?}>} videos
+ * @returns {{ success, results: Array<{videoId, score, confidence, similarity, ...}>, model }}
+ */
+export async function scoreGoalRelevanceBatch(goal, videos = []) {
+  try {
+    const extractor = await PipelineSingleton.getInstance(LOCAL_MODEL_ID);
+    const goalVector = await embed(extractor, goal || '');
+    const results = [];
+
+    for (const v of videos) {
+      const videoId = (v.videoId || v.id || '').toString();
+      const title = v.title || '';
+      const channel = v.channel || '';
+      const description = v.description || '';
+      const videoText = [title, channel, description].filter(Boolean).join(' ').slice(0, 2000);
+      const videoVector = await embed(extractor, videoText);
+      const similarity = cos_sim(goalVector, videoVector);
+      results.push({
+        videoId,
+        score: similarityToScore(similarity),
+        confidence: confidenceFromSimilarity(similarity),
+        similarity,
+        title,
+        channel,
+        description,
+        source: 'local',
+        model: LOCAL_MODEL_ID
+      });
+    }
+
+    return {
+      success: true,
+      results,
+      source: 'local',
+      model: LOCAL_MODEL_ID,
+      backend: navigator?.gpu ? 'webgpu-or-wasm' : 'wasm'
+    };
+  } catch (error) {
+    console.error('[ML] scoreGoalRelevanceBatch error:', error);
+    return { success: false, error: error.message, source: 'local', results: [] };
+  }
+}
+
 /** Batch feed-filter similarity (existing content.js path). */
 export async function calculateBatchSimilarity(goal, recommendations) {
   try {
