@@ -39,6 +39,9 @@
       ],
       "js": [
         "local_entertainment_channels.js",
+        "purge_undo.js",
+        "purge_interfaces.js",
+        "purge_snap.js",
         "content.js"
       ],
       "run_at": "document_idle"

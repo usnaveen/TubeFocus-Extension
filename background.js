@@ -1,3 +1,4 @@
+import { scorePurgeWithJev } from './purge_jev_scorer.js';
 // background.js
 
 import { calculateBatchSimilarity } from './ml_service.js';
@@ -108,7 +109,46 @@ chrome.alarms.onAlarm.addListener(alarm => {
 
 // --- Message listener ---
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'THEME_CHANGED') {
+  if (msg.type === 'PURGE_SCORE_JEV') {
+    (async () => {
+      try {
+        const stored = await chrome.storage.local.get(['jevApiKey', 'TYPESAFE_API_KEY', 'purgeEngine']);
+        const apiKey = msg.apiKey || stored.jevApiKey || stored.TYPESAFE_API_KEY || '';
+        const goal = msg.goal || '';
+        const videos = msg.videos || msg.recommendations || [];
+        if (!apiKey) {
+          sendResponse({ success: false, error: 'missing_jev_api_key', results: [], hint: 'Set jevApiKey in chrome.storage.local or popup Purge settings' });
+          return;
+        }
+        const out = await scorePurgeWithJev(apiKey, goal, videos);
+        sendResponse(out);
+      } catch (err) {
+        sendResponse({ success: false, error: err.message || String(err), results: [] });
+      }
+    })();
+    return true;
+  } else if (msg.type === 'PURGE_RUN_DEMO') {
+    // Forward to active YouTube tab content script
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab || !tab.id || !(tab.url || '').includes('youtube.com')) {
+        sendResponse({ success: false, error: 'open_youtube_tab' });
+        return;
+      }
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'PURGE_RUN_DEMO',
+        goal: msg.goal,
+        engine: msg.engine || 'auto'
+      }, (res) => {
+        if (chrome.runtime.lastError) {
+          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          sendResponse(res || { success: true });
+        }
+      });
+    });
+    return true;
+  } else if (msg.type === 'THEME_CHANGED') {
     // Forward theme change to all content scripts
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach(tab => {

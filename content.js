@@ -2736,6 +2736,140 @@ function overlapsGoal(title, goal) {
   return overlapCount / goalProfile.tokens.length;
 }
 
+
+/**
+ * Apply a keep/purge decision to a recommendation card.
+ * NAV-43: purge uses softHide (restorable + Undo toast) instead of hard remove.
+ * Bot2 snap path should prefer window.TubeFocusPurgeSnap.snapHide → softHide.
+ */
+
+
+/**
+ * NAV-42 helper for Purge (Bot2): collect feed/sidebar card metadata.
+ * Does NOT hide/animate — only extracts {videoId, title, channel, element}.
+ */
+function collectCandidateVideos(root = document) {
+  const selectors = Array.isArray(RECOMMENDATION_SELECTORS)
+    ? RECOMMENDATION_SELECTORS.join(', ')
+    : (typeof RECOMMENDATION_SELECTORS === 'string'
+      ? RECOMMENDATION_SELECTORS
+      : [
+          'ytd-compact-video-renderer',
+          'ytd-video-renderer',
+          'ytd-rich-item-renderer',
+          'ytd-grid-video-renderer'
+        ].join(', '));
+
+  const seen = new Set();
+  const out = [];
+  for (const el of root.querySelectorAll(selectors)) {
+    const rec = typeof extractSidebarRecommendation === 'function'
+      ? extractSidebarRecommendation(el)
+      : null;
+    if (!rec || !rec.id || seen.has(rec.id)) continue;
+    seen.add(rec.id);
+    out.push({
+      videoId: rec.id,
+      title: rec.title || '',
+      channel: rec.channel || '',
+      element: rec.element || el
+    });
+  }
+  return out;
+}
+
+/**
+ * Ask background to batch-score candidates (model loads once in SW).
+ * @returns {Promise<{success, results, stats, goalHash}>}
+ */
+function requestPurgeScoreBatch(goal, videos, extras = {}) {
+  const payload = (videos || []).map((v) => ({
+    videoId: v.videoId || v.id,
+    title: v.title || '',
+    channel: v.channel || '',
+    description: v.description || ''
+  }));
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: 'SCORE_BATCH',
+          goal: goal || '',
+          videos: payload,
+          ...extras
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            resolve({ success: false, error: chrome.runtime.lastError.message, results: [] });
+            return;
+          }
+          resolve(response || { success: false, error: 'empty response', results: [] });
+        }
+      );
+    } catch (err) {
+      resolve({ success: false, error: err.message || String(err), results: [] });
+    }
+  });
+}
+
+try {
+  self.TubeFocusPurge = Object.assign(self.TubeFocusPurge || {}, {
+    collectCandidateVideos,
+    requestPurgeScoreBatch
+  });
+} catch (_) { /* ignore */ }
+
+function applyRecommendationFilter(el, decision) {
+  if (!el || !decision) return;
+
+  const purgeApi = (typeof window !== 'undefined' && window.TubeFocusPurge) ? window.TubeFocusPurge : null;
+  const shouldPurge = (typeof window !== 'undefined' && window.TubeFocusPurgeDecision)
+    ? window.TubeFocusPurgeDecision.shouldPurge(decision)
+    : !!decision.hide;
+
+  const rec = extractSidebarRecommendation(el);
+  const videoId = (rec && rec.id) || el.getAttribute('data-tubefocus-video-id') || null;
+  const title = (rec && rec.title) || '';
+
+  if (shouldPurge) {
+    const snapApi = (typeof window !== 'undefined' && window.TubeFocusPurgeSnap) ? window.TubeFocusPurgeSnap : null;
+    const snapOpts = {
+      videoId,
+      reason: decision.reason || 'purged',
+      score: typeof decision.score === 'number' ? decision.score : undefined,
+      title
+    };
+    if (snapApi && typeof snapApi.snapHide === 'function') {
+      snapApi.snapHide(el, snapOpts);
+    } else if (purgeApi && typeof purgeApi.softHide === 'function') {
+      purgeApi.softHide(el, snapOpts);
+    } else {
+      el.classList.add('tubefocus-filter-hidden');
+      el.setAttribute('data-tubefocus-purged', '1');
+      if (videoId) el.setAttribute('data-tubefocus-video-id', videoId);
+    }
+    if (typeof decision.score === 'number') {
+      el.setAttribute('data-tubefocus-score', String(decision.score));
+    }
+    return;
+  }
+
+  // Keep / unsure — ensure visible + keep metric (unsure does not count as purge)
+  if (el.classList.contains('tubefocus-filter-hidden') || el.getAttribute('data-tubefocus-purged') === '1') {
+    el.classList.remove('tubefocus-filter-hidden');
+    el.removeAttribute('data-tubefocus-purged');
+    el.removeAttribute('data-tubefocus-purge-reason');
+  }
+  if (typeof decision.score === 'number') {
+    el.setAttribute('data-tubefocus-score', String(decision.score));
+  }
+  const isUnsure = decision.decision === 'unsure' || decision.reason === 'unsure';
+  if (!isUnsure && purgeApi && typeof purgeApi.recordKeep === 'function' && !el.getAttribute('data-tubefocus-keep-counted')) {
+    purgeApi.recordKeep({ videoId, reason: decision.reason || 'keep', score: decision.score });
+    el.setAttribute('data-tubefocus-keep-counted', '1');
+  }
+}
+
 async function queueVisibleRecommendations() {
   if (!sessionActive) return;
   const elements = Array.from(document.querySelectorAll(RECOMMENDATION_SELECTORS))
@@ -2822,12 +2956,18 @@ function scheduleBatchProcessing() {
 function clearGatekeeperDecorations() {
   recommendationDecisionCache.clear();
   filteredRecommendationRuntimeSet.clear();
+  if (typeof window !== 'undefined' && window.TubeFocusPurge && typeof window.TubeFocusPurge.clearAllSoftHides === 'function') {
+    window.TubeFocusPurge.clearAllSoftHides();
+  }
   document.querySelectorAll('.tubefocus-filter-hidden').forEach((el) => {
     el.classList.remove('tubefocus-filter-hidden');
+    el.removeAttribute('data-tubefocus-purged');
+    el.removeAttribute('data-tubefocus-purge-reason');
   });
   document.querySelectorAll('[data-tubefocus-filtered="1"]').forEach((el) => {
     el.removeAttribute('data-tubefocus-filtered');
     el.removeAttribute('data-tubefocus-score');
+    el.removeAttribute('data-tubefocus-keep-counted');
   });
   updateFilterStatusBadge();
 }
@@ -2864,3 +3004,28 @@ function showToast(message, isError = false) {
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
 }
+
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || message.type !== 'PURGE_RUN_DEMO') return;
+  (async () => {
+    try {
+      const snap = window.TubeFocusPurgeSnap;
+      if (!snap || typeof snap.runPurgePass !== 'function') {
+        sendResponse({ success: false, error: 'snap_not_loaded' });
+        return;
+      }
+      let goal = message.goal;
+      if (!goal) {
+        goal = await new Promise((resolve) => {
+          chrome.storage.local.get(['goal'], (d) => resolve((d && d.goal) || ''));
+        });
+      }
+      const stats = await snap.runPurgePass({ goal, engine: message.engine || 'auto' });
+      sendResponse({ success: true, stats });
+    } catch (err) {
+      sendResponse({ success: false, error: err.message || String(err) });
+    }
+  })();
+  return true;
+});
