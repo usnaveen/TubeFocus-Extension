@@ -56,7 +56,9 @@
         "wasm/*",
         "libs/*",
         "ml_service.js",
-        "local_score_router.js"
+        "local_score_router.js",
+        "purge_batch_scorer.js",
+        "config.js"
       ],
       "matches": [
         "https://*.youtube.com/*"

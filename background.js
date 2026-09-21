@@ -2,6 +2,7 @@
 
 import { calculateBatchSimilarity } from './ml_service.js';
 import { scoreVideoLocalFirst } from './local_score_router.js';
+import { scoreVideosBatch, clearPurgeScoreCache } from './purge_batch_scorer.js';
 
 console.log('[background] service worker started - LOCAL-FIRST SCORER');
 console.log('[background] API Base URL:', 'https://yt-scorer-api-933573987016.us-central1.run.app');
@@ -10,7 +11,13 @@ console.log('[background] Available endpoints: /score/detailed, /score/simple, /
 // Configuration - CLOUD RUN
 const CONFIG = {
   API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',
-  API_KEY: 'test_key'
+  API_KEY: 'test_key',
+  // Purge batch (NAV-42) — mirror config.js; content may override per message
+  PURGE_SCORE_BELOW: 40,
+  UNSURE_BAND: 10,
+  PURGE_LOW_CONFIDENCE: 0.45,
+  PURGE_BATCH_SIZE: 20,
+  PURGE_CACHE_MAX_ENTRIES: 500
 };
 
 const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;
@@ -124,6 +131,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     calculateBatchSimilarity(msg.goal, msg.recommendations)
       .then(result => sendResponse(result))
       .catch(err => sendResponse({ success: false, error: err.toString() }));
+    return true;
+  } else if (msg.type === 'SCORE_BATCH' || msg.type === 'PURGE_SCORE_BATCH') {
+    // NAV-42: batch MiniLM + (goalHash, videoId) cache for Purge snap-hide (Bot2)
+    const videos = msg.videos || msg.items || [];
+    const purgeCfg = {
+      PURGE_SCORE_BELOW: msg.PURGE_SCORE_BELOW ?? CONFIG.PURGE_SCORE_BELOW,
+      UNSURE_BAND: msg.UNSURE_BAND ?? CONFIG.UNSURE_BAND,
+      PURGE_LOW_CONFIDENCE: msg.PURGE_LOW_CONFIDENCE ?? CONFIG.PURGE_LOW_CONFIDENCE,
+      PURGE_BATCH_SIZE: msg.PURGE_BATCH_SIZE ?? CONFIG.PURGE_BATCH_SIZE,
+      PURGE_CACHE_MAX_ENTRIES: CONFIG.PURGE_CACHE_MAX_ENTRIES
+    };
+    console.log('[background] SCORE_BATCH', { n: videos.length, goalLen: (msg.goal || '').length });
+    scoreVideosBatch(msg.goal, videos, purgeCfg)
+      .then((result) => {
+        console.log('[background] SCORE_BATCH done', result.stats);
+        sendResponse(result);
+      })
+      .catch((err) => {
+        console.error('[background] SCORE_BATCH error:', err);
+        sendResponse({ success: false, error: err.message || String(err) });
+      });
+    return true;
+  } else if (msg.type === 'CLEAR_PURGE_SCORE_CACHE') {
+    clearPurgeScoreCache()
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message || String(err) }));
     return true;
   } else
     if (msg.type === 'START_SESSION') {
