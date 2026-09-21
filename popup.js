@@ -806,3 +806,82 @@ function displaySearchResults(response) {
 
   searchResults.innerHTML = html;
 }
+
+
+// --- Purge / Thanos demo ---
+(function initPurgePanel() {
+  const engineEl = document.getElementById('purgeEngine');
+  const keyEl = document.getElementById('jevApiKey');
+  const enabledEl = document.getElementById('purgeEnabled');
+  const runBtn = document.getElementById('runPurgeDemo');
+  const statusEl = document.getElementById('purgeStatus');
+  const metricsEl = document.getElementById('purgeMetrics');
+  if (!runBtn) return;
+
+  function setStatus(t) { if (statusEl) statusEl.textContent = t || ''; }
+
+  function refreshMetrics() {
+    chrome.storage.local.get(['__tubefocusPurgeMetrics', 'tubefocusPurgeMetrics'], (d) => {
+      const m = d.__tubefocusPurgeMetrics || d.tubefocusPurgeMetrics || {};
+      if (metricsEl) {
+        const falseN = m.falsePurge != null ? m.falsePurge : (m.undo || 0);
+        metricsEl.textContent = `purge ${m.purge || 0} · undo ${m.undo || 0} · false ${falseN} · keep ${m.keep || 0}`;
+      }
+    });
+  }
+
+  chrome.storage.local.get(['purgeEngine', 'jevApiKey', 'purgeEnabled'], (d) => {
+    if (engineEl && d.purgeEngine) engineEl.value = d.purgeEngine;
+    if (keyEl && d.jevApiKey) keyEl.value = d.jevApiKey;
+    if (enabledEl) enabledEl.checked = !!d.purgeEnabled;
+  });
+  refreshMetrics();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.__tubefocusPurgeMetrics || changes.tubefocusPurgeMetrics)) {
+      refreshMetrics();
+    }
+  });
+
+  function persist() {
+    chrome.storage.local.set({
+      purgeEngine: engineEl ? engineEl.value : 'auto',
+      jevApiKey: keyEl ? keyEl.value.trim() : '',
+      purgeEnabled: enabledEl ? !!enabledEl.checked : false
+    });
+  }
+  engineEl && engineEl.addEventListener('change', persist);
+  keyEl && keyEl.addEventListener('change', persist);
+  enabledEl && enabledEl.addEventListener('change', persist);
+
+  runBtn.addEventListener('click', () => {
+    persist();
+    setStatus('Snapping… open a YouTube tab with a goal set.');
+    const engine = engineEl ? engineEl.value : 'auto';
+    chrome.storage.local.get(['goal'], (d) => {
+      const goalInputEl = document.getElementById('goalInput');
+      const fromInput = (goalInputEl && goalInputEl.value || '').trim();
+      const goal = fromInput || (d.goal || '').trim() || '';
+      if (!goal) {
+        setStatus('Set a goal in the Setup field first (e.g. learn system design).');
+        return;
+      }
+      chrome.runtime.sendMessage({
+        type: 'PURGE_RUN_DEMO',
+        goal,
+        engine
+      }, (res) => {
+        if (chrome.runtime.lastError) {
+          setStatus('Error: ' + chrome.runtime.lastError.message);
+          return;
+        }
+        if (!res || !res.success) {
+          setStatus('Failed: ' + ((res && res.error) || 'unknown') + (res && res.error === 'open_youtube_tab' ? ' — focus a youtube.com tab' : ''));
+          return;
+        }
+        const s = res.stats || {};
+        setStatus(`Done via ${s.engine || engine}: scanned ${s.scanned || 0}, purged ${s.purged || 0}, kept ${s.kept || 0}, unsure ${s.unsure || 0}`);
+        refreshMetrics();
+      });
+    });
+  });
+})();

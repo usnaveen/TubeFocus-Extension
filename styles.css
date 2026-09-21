@@ -1236,3 +1236,7 @@ footer {
   align-items: center;
   gap: 6px;
 }
+
+#purgePanel h3 { letter-spacing: 0.04em; }
+#runPurgeDemo { background: linear-gradient(135deg, #6b21a8, #c1121f); border: none; color: #fdf0d5; font-weight: 700; }
+#runPurgeDemo:hover { filter: brightness(1.08); }

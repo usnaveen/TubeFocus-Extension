@@ -1,15 +1,28 @@
+import { scorePurgeWithJev } from './purge_jev_scorer.js';
 // background.js
 
 import { calculateBatchSimilarity } from './ml_service.js';
+import { scoreVideoLocalFirst } from './local_score_router.js';
+import { scoreVideosBatch, clearPurgeScoreCache } from './purge_batch_scorer.js';
 
-console.log('[background] service worker started - CLOUD RUN MODE');
+console.log('[background] service worker started - LOCAL-FIRST SCORER');
 console.log('[background] API Base URL:', 'https://yt-scorer-api-933573987016.us-central1.run.app');
 console.log('[background] Available endpoints: /score/detailed, /score/simple, /score/simple/fast, /feedback, /health');
 
 // Configuration - CLOUD RUN
 const CONFIG = {
   API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',
-  API_KEY: 'test_key'
+  API_KEY: 'test_key',
+  // Offline demo: never hit dead cloud score host (404)
+  LOCAL_FIRST: true,
+  CLOUD_FALLBACK: false,
+  LOW_CONFIDENCE: 0.45,
+  // Purge batch (NAV-42) — mirror config.js; content may override per message
+  PURGE_SCORE_BELOW: 40,
+  UNSURE_BAND: 10,
+  PURGE_LOW_CONFIDENCE: 0.45,
+  PURGE_BATCH_SIZE: 20,
+  PURGE_CACHE_MAX_ENTRIES: 500
 };
 
 const API_ENDPOINT = `${CONFIG.API_BASE_URL}/score/detailed`;
@@ -108,7 +121,46 @@ chrome.alarms.onAlarm.addListener(alarm => {
 
 // --- Message listener ---
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'THEME_CHANGED') {
+  if (msg.type === 'PURGE_SCORE_JEV') {
+    (async () => {
+      try {
+        const stored = await chrome.storage.local.get(['jevApiKey', 'TYPESAFE_API_KEY', 'purgeEngine']);
+        const apiKey = msg.apiKey || stored.jevApiKey || stored.TYPESAFE_API_KEY || '';
+        const goal = msg.goal || '';
+        const videos = msg.videos || msg.recommendations || [];
+        if (!apiKey) {
+          sendResponse({ success: false, error: 'missing_jev_api_key', results: [], hint: 'Set jevApiKey in chrome.storage.local or popup Purge settings' });
+          return;
+        }
+        const out = await scorePurgeWithJev(apiKey, goal, videos);
+        sendResponse(out);
+      } catch (err) {
+        sendResponse({ success: false, error: err.message || String(err), results: [] });
+      }
+    })();
+    return true;
+  } else if (msg.type === 'PURGE_RUN_DEMO') {
+    // Forward to active YouTube tab content script
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab || !tab.id || !(tab.url || '').includes('youtube.com')) {
+        sendResponse({ success: false, error: 'open_youtube_tab' });
+        return;
+      }
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'PURGE_RUN_DEMO',
+        goal: msg.goal,
+        engine: msg.engine || 'auto'
+      }, (res) => {
+        if (chrome.runtime.lastError) {
+          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          sendResponse(res || { success: true });
+        }
+      });
+    });
+    return true;
+  } else if (msg.type === 'THEME_CHANGED') {
     // Forward theme change to all content scripts
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach(tab => {
@@ -123,6 +175,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     calculateBatchSimilarity(msg.goal, msg.recommendations)
       .then(result => sendResponse(result))
       .catch(err => sendResponse({ success: false, error: err.toString() }));
+    return true;
+  } else if (msg.type === 'SCORE_BATCH' || msg.type === 'PURGE_SCORE_BATCH') {
+    // NAV-42: batch MiniLM + (goalHash, videoId) cache for Purge snap-hide (Bot2)
+    const videos = msg.videos || msg.items || [];
+    const purgeCfg = {
+      PURGE_SCORE_BELOW: msg.PURGE_SCORE_BELOW ?? CONFIG.PURGE_SCORE_BELOW,
+      UNSURE_BAND: msg.UNSURE_BAND ?? CONFIG.UNSURE_BAND,
+      PURGE_LOW_CONFIDENCE: msg.PURGE_LOW_CONFIDENCE ?? CONFIG.PURGE_LOW_CONFIDENCE,
+      PURGE_BATCH_SIZE: msg.PURGE_BATCH_SIZE ?? CONFIG.PURGE_BATCH_SIZE,
+      PURGE_CACHE_MAX_ENTRIES: CONFIG.PURGE_CACHE_MAX_ENTRIES
+    };
+    console.log('[background] SCORE_BATCH', { n: videos.length, goalLen: (msg.goal || '').length });
+    scoreVideosBatch(msg.goal, videos, purgeCfg)
+      .then((result) => {
+        console.log('[background] SCORE_BATCH done', result.stats);
+        sendResponse(result);
+      })
+      .catch((err) => {
+        console.error('[background] SCORE_BATCH error:', err);
+        sendResponse({ success: false, error: err.message || String(err) });
+      });
+    return true;
+  } else if (msg.type === 'CLEAR_PURGE_SCORE_CACHE') {
+    clearPurgeScoreCache()
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message || String(err) }));
     return true;
   } else
     if (msg.type === 'START_SESSION') {
@@ -185,38 +263,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           let description = '';
 
           try {
-            // Use unified score endpoint
-            const endpoint = `${CONFIG.API_BASE_URL}/score`;
-            const requestBody = {
-              video_url: `https://www.youtube.com/watch?v=${msg.videoId}`,
+            const data = await scoreVideoLocalFirst({
               goal: prefs.goal,
-              mode: 'title_and_description'
-            };
+              url: `https://www.youtube.com/watch?v=${msg.videoId}`,
+              title: msg.title || '',
+              description: msg.description || '',
+              channel: msg.channel || ''
+            }, CONFIG);
 
-            console.log('[background] Making API call to:', endpoint);
-
-            const res = await fetch(endpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-API-KEY': CONFIG.API_KEY
-              },
-              body: JSON.stringify(requestBody)
-            });
-
-            if (!res.ok) {
-              throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            if (data.error && data.score == null) {
+              throw new Error(data.error);
             }
 
-            const data = await res.json();
-            score = data.score || data;
-
-            // Backend now provides metadata!
-            title = data.title || 'Unknown Video';
-            description = data.description || '';
-
+            score = data.score;
+            title = data.title || msg.title || 'Unknown Video';
+            description = data.description || msg.description || '';
+            console.log('[background] videoData scored via', data.source, 'score=', score, 'confidence=', data.confidence);
           } catch (e) {
-            console.error('[background] API call failed:', e);
+            console.error('[background] Scoring failed:', e);
             score = null;
           }
 
@@ -231,89 +295,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
       });
     } else if (msg.type === 'FETCH_SCORE') {
-      console.log('[background] FETCH_SCORE request', msg);
+      console.log('[background] FETCH_SCORE request (local-first)', msg);
 
-      // Use unified score endpoint
-      const endpoint = `${CONFIG.API_BASE_URL}/score`;
-      const requestBody = {
-        video_url: msg.url,
+      scoreVideoLocalFirst({
         goal: msg.goal,
-        mode: 'title_and_description'
-      };
-
-      console.log('[background] LOCAL DEV: FETCH_SCORE API call to:', endpoint);
-      console.log('[background] LOCAL DEV: Request body:', requestBody);
-
-      fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': CONFIG.API_KEY
-        },
-        body: JSON.stringify(requestBody)
-      })
-        .then(res => {
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-          }
-          return res.json();
-        })
+        url: msg.url,
+        title: msg.title || '',
+        description: msg.description || '',
+        channel: msg.channel || ''
+      }, CONFIG)
         .then(data => {
-          console.log('[background] LOCAL DEV: FETCH_SCORE response:', data);
+          console.log('[background] FETCH_SCORE result:', { source: data.source, score: data.score, confidence: data.confidence });
           sendResponse(data);
         })
         .catch(err => {
-          console.error('[background] LOCAL DEV: FETCH_SCORE error:', err);
-
-          // If it's a 404 error with the fast endpoint, try the regular endpoint
-          if (msg.scoringType === 'simple' && endpoint.includes('/fast') && err.message.includes('404')) {
-            console.log('[background] Fast endpoint not found, trying regular /score endpoint');
-            const fallbackEndpoint = `${CONFIG.API_BASE_URL}/score`;
-
-            fetch(fallbackEndpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-API-KEY': CONFIG.API_KEY
-              },
-              body: JSON.stringify(requestBody)
-            })
-              .then(res => {
-                if (!res.ok) {
-                  throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-                }
-                return res.json();
-              })
-              .then(data => {
-                console.log('[background] LOCAL DEV: FETCH_SCORE fallback response:', data);
-                sendResponse(data);
-              })
-              .catch(fallbackErr => {
-                console.error('[background] LOCAL DEV: Fallback also failed:', fallbackErr);
-                sendResponse({ error: 'Backend server not available' });
-              });
-            return;
-          }
-
-          console.log('[background] LOCAL DEV: Make sure the dev container is running on localhost:8080');
-
-          // Provide more specific error messages
-          let errorMessage = 'Connection failed';
-          if (err.message.includes('Failed to fetch')) {
-            errorMessage = 'Backend server not running';
-          } else if (err.message.includes('404')) {
-            errorMessage = 'API endpoint not found';
-          } else if (err.message.includes('500')) {
-            errorMessage = 'Server error occurred';
-          } else if (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED')) {
-            errorMessage = 'Cannot connect to backend';
-          } else {
-            errorMessage = err.message;
-          }
-
-          sendResponse({ error: errorMessage });
+          console.error('[background] FETCH_SCORE error:', err);
+          sendResponse({ error: err.message || 'Scoring failed' });
         });
-      return true; // Keep the message channel open for sendResponse
+      return true;
     } else if (msg.type === 'COACH_ANALYZE') {
       console.log('[background] COACH_ANALYZE request for session:', msg.sessionId);
 
