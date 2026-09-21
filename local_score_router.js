@@ -6,7 +6,7 @@ import { scoreGoalRelevance } from './ml_service.js';
 
 const DEFAULTS = {
   LOCAL_FIRST: true,
-  CLOUD_FALLBACK: true,
+  CLOUD_FALLBACK: false, // offline demo — cloud score host returns 404
   // Below this confidence, optionally call cloud (when CLOUD_FALLBACK).
   LOW_CONFIDENCE: 0.45,
   API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',

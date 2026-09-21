@@ -13,6 +13,10 @@ console.log('[background] Available endpoints: /score/detailed, /score/simple, /
 const CONFIG = {
   API_BASE_URL: 'https://yt-scorer-api-933573987016.us-central1.run.app',
   API_KEY: 'test_key',
+  // Offline demo: never hit dead cloud score host (404)
+  LOCAL_FIRST: true,
+  CLOUD_FALLBACK: false,
+  LOW_CONFIDENCE: 0.45,
   // Purge batch (NAV-42) — mirror config.js; content may override per message
   PURGE_SCORE_BELOW: 40,
   UNSURE_BAND: 10,

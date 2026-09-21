@@ -6,7 +6,7 @@ const CONFIG = {
 
   // Tier A: on-device scorer is default; Gemini/Cloud Run only on low confidence or failure
   LOCAL_FIRST: true,
-  CLOUD_FALLBACK: true,
+  CLOUD_FALLBACK: false, // demo: dead cloud host → stay offline (lexical/MiniLM only)
   LOW_CONFIDENCE: 0.45,
   LOCAL_MODEL_ID: 'Xenova/all-MiniLM-L6-v2',
 
